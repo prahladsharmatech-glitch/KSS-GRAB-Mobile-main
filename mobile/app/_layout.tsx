@@ -12,12 +12,7 @@ import { MobileBottomNav } from '../components/MobileBottomNav';
 import { COLORS } from '../constants/theme';
 import { View, StyleSheet, LogBox } from 'react-native';
 
-LogBox.ignoreLogs([
-  'Cannot connect to Expo CLI',
-  'Console Warning',
-  'Require cycle:',
-]);
-LogBox.ignoreAllLogs(true);
+LogBox.ignoreLogs(['Cannot connect to Expo CLI', 'No route named', 'AIRMap', 'Require cycle:']);
 
 export default function RootLayout() {
   return (
@@ -30,7 +25,7 @@ export default function RootLayout() {
                 <SafeAreaView style={styles.container} edges={['top']}>
                   <StatusBar style="dark" />
                   <View style={styles.content}>
-                    <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+                    <Stack screenOptions={{ headerShown: false, animation: 'none' }}>
                       <Stack.Screen name="index" />
                       <Stack.Screen name="login" />
                       <Stack.Screen name="customer/index" />

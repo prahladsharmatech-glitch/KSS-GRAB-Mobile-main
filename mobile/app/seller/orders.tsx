@@ -12,7 +12,6 @@ import {
   Share,
   Platform,
 } from 'react-native';
-import * as Print from 'expo-print';
 import { get, patch } from '../../services/api';
 import { Order } from '../../types';
 export { Order };
@@ -528,7 +527,7 @@ export default function SellerOrdersScreen() {
   const handlePrintPackingSlip = async (order: Order) => {
     try {
       const html = generatePackingSlipHtml(order);
-      if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.print === 'function') {
+      if (typeof window !== 'undefined' && typeof window.open === 'function') {
         const printWindow = window.open('', '_blank');
         if (printWindow) {
           printWindow.document.write(html);
@@ -537,13 +536,22 @@ export default function SellerOrdersScreen() {
           setTimeout(() => {
             printWindow.print();
           }, 250);
-        } else {
-          await Print.printAsync({ html });
+          showToast(`Printing Order Slip #${order.id}...`, 'success');
+          return;
         }
-      } else {
-        await Print.printAsync({ html });
       }
-      showToast(`Printing Order Slip #${order.id}...`, 'success');
+
+      // Native fallback: Share order packing slip text
+      const itemsList = (order.items || [])
+        .map((it) => `- ${it.name} x${it.quantity} (₹${it.price * it.quantity})`)
+        .join('\n');
+      const shareText = `GRABIT ORDER SLIP #${order.id}\nCustomer: ${order.customer_name || 'Customer'}\nPhone: ${order.customer_phone || ''}\nAddress: ${order.address || ''}\n\nITEMS:\n${itemsList}\n\nTotal: ₹${order.total}`;
+
+      await Share.share({
+        title: `Order Slip #${order.id}`,
+        message: shareText,
+      });
+      showToast(`Order Slip #${order.id} generated`, 'success');
     } catch {
       showToast('Printing failed or cancelled', 'error');
     }
