@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "Grabit",
+    "slug": "grabit-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "grabit",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.grabit.mobile"
+    },
+    "android": {
+      "package": "com.grabit.mobile",
+      "permissions": [
+        "CAMERA",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Grabit to access your location to show available stores and track live delivery."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Grabit to use camera for rider biometric verification and document uploads."
+        }
+      ],
+      "expo-asset"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

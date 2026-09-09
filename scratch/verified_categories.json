@@ -1,0 +1,242 @@
+[
+  {
+    "id": "1",
+    "name": "Snacks & Munchies",
+    "slug": "snacks-munchies",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645100/grabit_media/category-snacks-banner.png",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "2",
+    "name": "Dairy & Bakery",
+    "slug": "dairy-bakery",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/amul-butter-real.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "3",
+    "name": "Cold Drinks & Juices",
+    "slug": "beverages",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645082/grabit_media/coca-cola-real.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "4",
+    "name": "Atta, Rice & Dal",
+    "slug": "staples",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645096/grabit_media/aashirvaad-atta-real.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "5",
+    "name": "Chocolates & Sweets",
+    "slug": "chocolates",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/cadbury-silk-real.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "6",
+    "name": "Personal Care",
+    "slug": "personal-care",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/dettol-handwash-real.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "7",
+    "name": "Household Essentials",
+    "slug": "household",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/surf-excel-real.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "8",
+    "name": "Fresh Fruits & Veggies",
+    "slug": "produce",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/fresh-produce-splash.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "9",
+    "name": "Tea, Coffee & Drinks",
+    "slug": "tea-coffee",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/nescafe-coffee-real.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "10",
+    "name": "Biscuits & Cookies",
+    "slug": "biscuits",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/oreo-biscuits-real.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "11",
+    "name": "Instant & Frozen Food",
+    "slug": "instant-food",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645081/grabit_media/maggi-noodles-real.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "12",
+    "name": "Edible Oils & Ghee",
+    "slug": "oil",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645142/grabit_media/fortune-oil-real.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "13",
+    "name": "Electronics & Gadgets",
+    "slug": "electronics",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/electronics-hero-banner.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "14",
+    "name": "Fashion & Accessories",
+    "slug": "fashion",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/sneakers.jpg",
+    "status": 200,
+    "content_type": "image/jpeg",
+    "dimensions": "800x533",
+    "ok": true
+  },
+  {
+    "id": "15",
+    "name": "Baby Care",
+    "slug": "baby-care",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/category-baby-care.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "16",
+    "name": "Pet Care & Food",
+    "slug": "pet-care",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/category-pet-care.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "17",
+    "name": "Beauty & Cosmetics",
+    "slug": "beauty-cosmetics",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/category-beauty-cosmetics.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "18",
+    "name": "Health & Wellness",
+    "slug": "health-wellness",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/category-health-wellness.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "19",
+    "name": "Meat, Fish & Eggs",
+    "slug": "meat-seafood",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/category-meat-seafood.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "20",
+    "name": "Home & Kitchen",
+    "slug": "home-kitchen",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/category-home-kitchen.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "21",
+    "name": "Stationery & Office",
+    "slug": "stationery-office",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/category-stationery-office.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "22",
+    "name": "Sports & Fitness",
+    "slug": "sports-fitness",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/category-sports-fitness.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "23",
+    "name": "Toys & Games",
+    "slug": "toys-games",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/category-toys-games.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  },
+  {
+    "id": "24",
+    "name": "Pooja & Spiritual",
+    "slug": "pooja-needs",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/category-pooja-needs.jpg",
+    "status": 404,
+    "content_type": "unknown",
+    "dimensions": "0x0",
+    "ok": false
+  }
+]

@@ -1,0 +1,10 @@
+[
+  {
+    "id": "LV-1001",
+    "rider_id": "d7e8f9a0-b1c2-3d4e-5f6a-7b8c9d0e1f2b",
+    "date": "2026-09-07",
+    "type": "WEEKOFF",
+    "note": "Scheduled Weekly Off",
+    "created_at": "2026-09-01T10:00:00Z"
+  }
+]

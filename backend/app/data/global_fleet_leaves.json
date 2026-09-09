@@ -1,0 +1,23 @@
+[
+  {
+    "id": "GLV-1788330361496",
+    "date": "2026-09-07",
+    "type": "WEEKOFF",
+    "note": "Scheduled Weekly Off",
+    "created_at": "2026-09-02T11:56:01.496836+05:30"
+  },
+  {
+    "id": "GLV-1788330831713",
+    "date": "2026-09-14",
+    "type": "WEEKOFF",
+    "note": "Holiday",
+    "created_at": "2026-09-02T12:03:51.713226+05:30"
+  },
+  {
+    "id": "GLV-1788539345947",
+    "date": "2026-09-12",
+    "type": "WEEKOFF",
+    "note": "sat",
+    "created_at": "2026-09-04T21:59:05.947784+05:30"
+  }
+]

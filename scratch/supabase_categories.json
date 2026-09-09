@@ -1,0 +1,194 @@
+[
+  {
+    "id": "44a35bf8-9053-4ab1-b36e-bec333870df5",
+    "name": "chocolate delight",
+    "image_url": "https://res.cloudinary.com/hmx3azp6/image/upload/v1788528148/grabit_media/categories/f8t3sbhbqsmjiziociwb.jpg",
+    "created_at": "2026-09-04T13:22:31.082061+00:00"
+  },
+  {
+    "id": "dac4b437-48bc-488e-afda-c9b80dcb6b6d",
+    "name": "dairy milk",
+    "image_url": "https://res.cloudinary.com/hmx3azp6/image/upload/v1788608747/grabit_media/categories/bi11docslolcxmkbdtsw.jpg",
+    "created_at": "2026-09-05T07:15:12.777404+00:00"
+  },
+  {
+    "id": "94345ff1-b31f-4c30-ab7c-d8b9caf8d427",
+    "name": "Tooti Fruitii",
+    "image_url": "https://res.cloudinary.com/hmx3azp6/image/upload/v1788609152/grabit_media/categories/hzggeketazsm7bfkphkq.jpg",
+    "created_at": "2026-09-05T11:52:33.89419+00:00"
+  },
+  {
+    "id": "e620095d-325c-498e-a07e-681fc67e6a24",
+    "name": "Vanilla Chocolate",
+    "image_url": "https://res.cloudinary.com/hmx3azp6/image/upload/v1788610230/grabit_media/categories/yosxuhe1sqk9aggmxol3.jpg",
+    "created_at": "2026-09-05T12:10:31.889379+00:00"
+  },
+  {
+    "id": "0d6326e5-2a16-47cc-8db4-eee3e0f70072",
+    "name": "Fruitiii",
+    "image_url": "https://res.cloudinary.com/hmx3azp6/image/upload/v1788611027/grabit_media/categories/qmf36yppjetawzx9rtwp.jpg",
+    "created_at": "2026-09-05T12:23:48.537763+00:00"
+  },
+  {
+    "id": "c6787e7a-e607-44bf-bf8a-87960329b4ad",
+    "name": "choco chunks",
+    "image_url": "https://res.cloudinary.com/hmx3azp6/image/upload/v1788611450/grabit_media/categories/qj5vyibyguwpshyyf6v0.jpg",
+    "created_at": "2026-09-05T12:30:51.680384+00:00"
+  },
+  {
+    "id": "8dd170ca-44db-4d77-b622-f4b91855640a",
+    "name": "tomato",
+    "image_url": "https://res.cloudinary.com/hmx3azp6/image/upload/v1788612175/grabit_media/categories/ro4nmpux9vn6kqnrmicz.jpg",
+    "created_at": "2026-09-05T12:42:56.373602+00:00"
+  },
+  {
+    "id": "c7f3d4c6-a7e4-4857-8522-2452fa6fc716",
+    "name": "starbucks coffee",
+    "image_url": "https://res.cloudinary.com/hmx3azp6/image/upload/v1788615269/grabit_media/categories/ciqibkoumlgu5vx1vbjz.jpg",
+    "created_at": "2026-09-05T13:34:30.547728+00:00"
+  },
+  {
+    "id": "742674a9-a713-4fda-855c-ffbde0a717b8",
+    "name": "Snacks & Munchies",
+    "image_url": "/category-snacks-banner.png",
+    "created_at": "2026-08-25T05:52:18.953091+00:00"
+  },
+  {
+    "id": "ebc2eba7-08e5-45c1-82d2-045574a590d2",
+    "name": "Dairy & Bakery",
+    "image_url": "/amul-butter-real.jpg",
+    "created_at": "2026-08-26T11:04:44.734874+00:00"
+  },
+  {
+    "id": "76e84349-a1d8-4fde-9a33-1d60cb87d960",
+    "name": "Cold Drinks & Juices",
+    "image_url": "/coca-cola-real.jpg",
+    "created_at": "2026-08-26T11:04:45.12166+00:00"
+  },
+  {
+    "id": "be5ceac7-65cf-4772-a21e-5b86f165d88b",
+    "name": "Atta, Rice & Dal",
+    "image_url": "/aashirvaad-atta-real.jpg",
+    "created_at": "2026-08-26T11:04:45.503358+00:00"
+  },
+  {
+    "id": "f2aa572b-82c8-4097-84af-09207c4ea25f",
+    "name": "Chocolates & Sweets",
+    "image_url": "/cadbury-silk-real.jpg",
+    "created_at": "2026-08-26T11:04:45.836456+00:00"
+  },
+  {
+    "id": "add5ed74-69c7-4d10-b38a-540ddf6988b8",
+    "name": "Personal Care",
+    "image_url": "/dettol-handwash-real.jpg",
+    "created_at": "2026-08-26T11:04:46.197331+00:00"
+  },
+  {
+    "id": "43f453ec-d56d-4cb7-b316-df0cf8f3cd06",
+    "name": "Household Essentials",
+    "image_url": "/surf-excel-real.jpg",
+    "created_at": "2026-08-26T11:04:46.613052+00:00"
+  },
+  {
+    "id": "d0e0fae3-2049-4567-946c-8c3c1d4f3822",
+    "name": "Fresh Fruits & Veggies",
+    "image_url": "/fresh-produce-splash.jpg",
+    "created_at": "2026-08-26T11:04:46.966036+00:00"
+  },
+  {
+    "id": "46f8f733-58c6-444f-90b0-4b279425789d",
+    "name": "Tea, Coffee & Drinks",
+    "image_url": "/nescafe-coffee-real.jpg",
+    "created_at": "2026-08-26T11:04:47.328333+00:00"
+  },
+  {
+    "id": "0e76f1fd-fb27-4756-9e7b-ae5daddc9d4a",
+    "name": "Biscuits & Cookies",
+    "image_url": "/oreo-biscuits-real.jpg",
+    "created_at": "2026-08-26T11:04:47.693314+00:00"
+  },
+  {
+    "id": "8f5cdfbe-f567-4f3f-8dec-19ce7d827064",
+    "name": "Instant & Frozen Food",
+    "image_url": "/maggi-noodles-real.jpg",
+    "created_at": "2026-08-26T11:04:48.04487+00:00"
+  },
+  {
+    "id": "89b2793b-7def-4a87-82ce-dcc4a2df966e",
+    "name": "Edible Oils & Ghee",
+    "image_url": "/fortune-oil-real.jpg",
+    "created_at": "2026-08-26T11:04:48.402655+00:00"
+  },
+  {
+    "id": "873e192d-5e7d-4f31-bb84-0f7b414741b3",
+    "name": "Electronics & Gadgets",
+    "image_url": "/electronics-hero-banner.jpg",
+    "created_at": "2026-08-26T11:04:48.782855+00:00"
+  },
+  {
+    "id": "3d84a8af-1ad3-47ee-9cc9-acbc41c5eac0",
+    "name": "Fashion & Accessories",
+    "image_url": "/sneakers.jpg",
+    "created_at": "2026-08-26T11:04:49.242573+00:00"
+  },
+  {
+    "id": "32797197-9365-4237-97ab-dd36ebf85f26",
+    "name": "test10",
+    "image_url": "https://res.cloudinary.com/hmx3azp6/image/upload/v1788522629/grabit_media/categories/rzehzbdb9jdwllqoehm8.jpg",
+    "created_at": "2026-09-04T11:50:31.684564+00:00"
+  },
+  {
+    "id": "aca27d66-f1b3-4fcc-a856-70ae18b82f37",
+    "name": "Jeera juice",
+    "image_url": "https://res.cloudinary.com/hmx3azp6/image/upload/v1788615497/grabit_media/categories/on7qgvj3ax0he67ky04x.jpg",
+    "created_at": "2026-09-05T13:38:18.425018+00:00"
+  },
+  {
+    "id": "96220573-1c53-457a-bfe7-5d9f72900af5",
+    "name": "red bull",
+    "image_url": "https://res.cloudinary.com/hmx3azp6/image/upload/v1788616244/grabit_media/categories/d3v1fih7hpvotqmg8sas.jpg",
+    "created_at": "2026-09-05T13:50:45.421566+00:00"
+  },
+  {
+    "id": "17d363b6-54a3-43eb-99ae-4d2a54550261",
+    "name": "Juice green",
+    "image_url": "",
+    "created_at": "2026-09-05T14:10:50.562212+00:00"
+  },
+  {
+    "id": "5cebbb1a-a83d-474e-8c3e-c24a7fb7e29e",
+    "name": "MilkShake Rose",
+    "image_url": "https://res.cloudinary.com/hmx3azp6/image/upload/v1788617529/grabit_media/categories/t7iu3ecfcp9ccjvpl8vp.jpg",
+    "created_at": "2026-09-05T14:12:11.124031+00:00"
+  },
+  {
+    "id": "241cb2c3-c075-4498-be14-4014086d8413",
+    "name": "Blue juice",
+    "image_url": "https://res.cloudinary.com/hmx3azp6/image/upload/v1788616590/grabit_media/categories/ixwkvobq14yjeypmk4nz.jpg",
+    "created_at": "2026-09-05T13:56:31.985786+00:00"
+  },
+  {
+    "id": "48838d42-7d5e-4194-880b-9f0d1701f43a",
+    "name": "pani puri",
+    "image_url": "https://res.cloudinary.com/hmx3azp6/image/upload/v1788619197/grabit_media/categories/hijvccalp6isdmuoxise.jpg",
+    "created_at": "2026-09-05T14:39:58.634418+00:00"
+  },
+  {
+    "id": "7c4adcfe-6f8d-42c1-ada2-66d3d5885f44",
+    "name": "maggie",
+    "image_url": "https://res.cloudinary.com/hmx3azp6/image/upload/v1788619378/grabit_media/categories/uyopxunctr9bzn1aejqk.jpg",
+    "created_at": "2026-09-05T14:42:59.634431+00:00"
+  },
+  {
+    "id": "13b4736d-37b4-4447-a533-b48f650cf5ce",
+    "name": "Gubal Jamoon",
+    "image_url": "https://res.cloudinary.com/hmx3azp6/image/upload/v1788619789/grabit_media/categories/qnkjrg7e8rxlkuanehy7.jpg",
+    "created_at": "2026-09-05T14:49:50.741067+00:00"
+  },
+  {
+    "id": "4368442f-761c-4482-9c27-9a3831be87f4",
+    "name": "Dairy - Pista",
+    "image_url": "https://res.cloudinary.com/hmx3azp6/image/upload/v1788619951/grabit_media/categories/isx3qtffn6amsdbvjuyg.jpg",
+    "created_at": "2026-09-05T14:52:32.654397+00:00"
+  }
+]

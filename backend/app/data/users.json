@@ -1,0 +1,108 @@
+[
+  {
+    "id": "seller-101",
+    "name": "John Seller",
+    "full_name": "John Seller",
+    "store_name": "John Seller Store",
+    "phone": "+919999900002",
+    "email": "john.seller@grabit.local",
+    "role": "seller",
+    "status": "ACTIVE",
+    "is_online": true,
+    "location": "Banaswadi 2nd Block, Bengaluru",
+    "created_at": "2026-01-15T10:00:00Z"
+  },
+  {
+    "id": "d7e8f9a0-b1c2-3d4e-5f6a-7b8c9d0e1f2b",
+    "name": "Thabee",
+    "full_name": "Thabee",
+    "phone": "+919080841727",
+    "role": "delivery_agent",
+    "is_online": false,
+    "agent_status": "UNAVAILABLE",
+    "vehicle_type": "Ather 450X EV Scooter",
+    "plate_number": "KA 05 EQ 4421",
+    "license_number": "DL-KA-05-2024009182",
+    "partnerVerified": true,
+    "biometricsDone": true,
+    "last_active_at": null,
+    "created_at": "2026-01-01T08:00:00Z",
+    "battery_low": false,
+    "shift_started_at": null,
+    "arrived_late_today": false,
+    "presence_status": "ABSENT",
+    "status": "ABSENT",
+    "shift_sessions": [],
+    "verification_status": "ADMIN_VERIFIED",
+    "verified_by_admin": true,
+    "clearances": {
+      "dlVerified": true,
+      "insuranceVerified": true,
+      "pucVerified": true,
+      "bgCheckVerified": true
+    },
+    "insuranceNo": "POL-HDFC-99201",
+    "insurance_no": "POL-HDFC-99201",
+    "pucNo": "PUC-KA05-882190",
+    "puc_no": "PUC-KA05-882190"
+  },
+  {
+    "id": "d7e8f9a0-b1c2-3d4e-5f6a-7b8c9d0e1f2a",
+    "name": "Karthik Rider",
+    "full_name": "Karthik Rider",
+    "phone": "+919999900003",
+    "role": "delivery_agent",
+    "is_online": false,
+    "agent_status": "UNAVAILABLE",
+    "vehicle_type": "TVS iQube Electric Scooter",
+    "plate_number": "KA-05-EX-9921",
+    "license_number": "DL-2024-88712",
+    "partnerVerified": true,
+    "biometricsDone": true,
+    "last_active_at": "2026-09-04T22:05:16.390600+05:30",
+    "created_at": "2026-01-05T09:30:00Z",
+    "battery_low": false,
+    "shift_started_at": "2026-09-04T10:34:02.364110+05:30",
+    "arrived_late_today": true,
+    "shift_sessions": [
+      {
+        "started_at": "2026-09-01T09:00:00.000000+05:30",
+        "ended_at": "2026-09-01T18:00:00.000000+05:30"
+      },
+      {
+        "started_at": "2026-09-02T09:00:00.000000+05:30",
+        "ended_at": "2026-09-02T18:00:00.000000+05:30"
+      },
+      {
+        "started_at": "2026-09-03T09:00:00.000000+05:30",
+        "ended_at": "2026-09-03T18:00:00.000000+05:30"
+      },
+      {
+        "started_at": "2026-09-04T10:34:02.364110+05:30",
+        "ended_at": "2026-09-04T16:55:09.270678+05:30"
+      },
+      {
+        "started_at": "2026-09-04T17:02:04.880115+05:30",
+        "ended_at": "2026-09-04T21:39:24.432349+05:30"
+      }
+    ],
+    "presence_status": "ABSENT",
+    "status": "ABSENT",
+    "verification_status": "VERIFIED",
+    "lat": 13.014340336374694,
+    "lng": 77.64603885962421,
+    "accuracy": 90.0,
+    "last_location_at": "2026-09-04T17:48:16.263872+05:30",
+    "auto_logged_out": false,
+    "verified_by_admin": true,
+    "clearances": {
+      "dlVerified": true,
+      "insuranceVerified": true,
+      "pucVerified": true,
+      "bgCheckVerified": true
+    },
+    "insuranceNo": "fsfdsc",
+    "insurance_no": "fsfdsc",
+    "connectivity_lost_at": null
+  }
+]
