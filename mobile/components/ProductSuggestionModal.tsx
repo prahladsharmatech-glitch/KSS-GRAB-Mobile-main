@@ -12,16 +12,15 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { post } from '../services/api';
 import { useToast } from '../context/ToastContext';
+import { useAuth } from '../context/AuthContext';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import {
   X,
   Lightbulb,
-  CheckCircle2,
   PackagePlus,
   Clock,
-  Tag,
-  MessageSquare,
   Sparkles,
+  ChevronDown,
 } from 'lucide-react-native';
 
 const CATEGORIES_LIST = [
@@ -69,19 +68,22 @@ export default function ProductSuggestionModal({
   prefillCategory = '',
 }: ProductSuggestionModalProps) {
   const { showToast } = useToast();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'suggest' | 'my-requests'>('suggest');
   const [productName, setProductName] = useState(prefillQuery);
   const [category, setCategory] = useState(prefillCategory || 'Snacks & Munchies');
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [brand, setBrand] = useState('');
   const [notes, setNotes] = useState('');
-  const [contact, setContact] = useState('');
+  const [contact, setContact] = useState(user?.phone || '+919999900001');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [mySuggestions, setMySuggestions] = useState<ProductSuggestion[]>([]);
 
   useEffect(() => {
     if (prefillQuery) setProductName(prefillQuery);
     if (prefillCategory) setCategory(prefillCategory);
-  }, [prefillQuery, prefillCategory, isOpen]);
+    if (user?.phone) setContact(user.phone);
+  }, [prefillQuery, prefillCategory, isOpen, user]);
 
   useEffect(() => {
     if (isOpen) {
@@ -123,7 +125,7 @@ export default function ProductSuggestionModal({
       category: category || 'General',
       brand: brand.trim(),
       notes: notes.trim(),
-      customer_phone: contact.trim() || 'Anonymous Customer',
+      customer_phone: contact.trim() || '+919999900001',
       created_at: new Date().toISOString(),
       status: 'Under Review',
     };
@@ -157,19 +159,17 @@ export default function ProductSuggestionModal({
     <Modal visible={isOpen} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <View style={styles.modalCard}>
-          {/* Header */}
+          {/* Header matching Screenshot */}
           <View style={styles.modalHeader}>
-            <View style={styles.headerLeft}>
-              <View style={styles.headerIconCircle}>
-                <Lightbulb size={22} color="#FFFFFF" />
-              </View>
-              <View>
-                <Text style={styles.headerTitle}>Suggest a Product</Text>
-                <Text style={styles.headerSub}>Can't find an item? Request it and we'll stock it!</Text>
-              </View>
+            <View style={styles.headerIconCircle}>
+              <Lightbulb size={20} color="#FFFFFF" />
+            </View>
+            <View style={styles.headerTextCol}>
+              <Text style={styles.headerTitle}>Suggest a Product</Text>
+              <Text style={styles.headerSub}>Can't find an item? Request it and we'll stock it for you!</Text>
             </View>
             <Pressable style={styles.closeBtn} onPress={onClose}>
-              <X size={18} color="#64748B" />
+              <X size={16} color="#64748B" />
             </Pressable>
           </View>
 
@@ -179,7 +179,7 @@ export default function ProductSuggestionModal({
               style={[styles.tabBtn, activeTab === 'suggest' && styles.tabBtnActive]}
               onPress={() => setActiveTab('suggest')}
             >
-              <PackagePlus size={15} color={activeTab === 'suggest' ? '#0071E3' : '#64748B'} />
+              <PackagePlus size={15} color={activeTab === 'suggest' ? '#0066FF' : '#64748B'} />
               <Text style={[styles.tabBtnText, activeTab === 'suggest' && styles.tabBtnTextActive]}>
                 New Suggestion
               </Text>
@@ -188,7 +188,7 @@ export default function ProductSuggestionModal({
               style={[styles.tabBtn, activeTab === 'my-requests' && styles.tabBtnActive]}
               onPress={() => setActiveTab('my-requests')}
             >
-              <Clock size={15} color={activeTab === 'my-requests' ? '#0071E3' : '#64748B'} />
+              <Clock size={15} color={activeTab === 'my-requests' ? '#0066FF' : '#64748B'} />
               <Text style={[styles.tabBtnText, activeTab === 'my-requests' && styles.tabBtnTextActive]}>
                 My Requests ({mySuggestions.length})
               </Text>
@@ -199,56 +199,92 @@ export default function ProductSuggestionModal({
           <ScrollView contentContainerStyle={styles.bodyContent} showsVerticalScrollIndicator={false}>
             {activeTab === 'suggest' ? (
               <View style={styles.formContainer}>
-                {/* Product Name */}
+                {/* Field 1: Product Name */}
                 <Text style={styles.inputLabel}>
                   Product Name <Text style={styles.reqStar}>*</Text>
                 </Text>
                 <TextInput
                   style={styles.inputBox}
-                  placeholder="e.g. Haldiram Roasted Makhana 100g, Oat Milk..."
+                  placeholder="e.g. Oat Milk 1L, Doritos Cool Ranch, Orga"
                   placeholderTextColor="#94A3B8"
                   value={productName}
                   onChangeText={setProductName}
                 />
 
-                {/* Category Pill Selector */}
-                <Text style={[styles.inputLabel, { marginTop: 12 }]}>Category</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
-                  {CATEGORIES_LIST.map((c) => {
-                    const isSelected = category === c;
-                    return (
+                {/* Field 2 & 3: Category and Brand in Side-by-Side Row */}
+                <View style={styles.rowTwoCols}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>Category</Text>
+                    <Pressable
+                      style={styles.dropdownSelectBtn}
+                      onPress={() => setShowCategoryPicker(!showCategoryPicker)}
+                    >
+                      <Text style={styles.dropdownSelectText} numberOfLines={1}>
+                        {category}
+                      </Text>
+                      <ChevronDown size={14} color="#64748B" />
+                    </Pressable>
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inputLabel}>
+                      Brand / Variant <Text style={styles.subtleOptional}>(Optional)</Text>
+                    </Text>
+                    <TextInput
+                      style={styles.inputBox}
+                      placeholder="e.g. Oatly, Amul, 5"
+                      placeholderTextColor="#94A3B8"
+                      value={brand}
+                      onChangeText={setBrand}
+                    />
+                  </View>
+                </View>
+
+                {/* Category Dropdown Expandable Options */}
+                {showCategoryPicker && (
+                  <View style={styles.categoryDropdownList}>
+                    {CATEGORIES_LIST.map((c) => (
                       <Pressable
                         key={c}
-                        style={[styles.categoryPill, isSelected && styles.categoryPillActive]}
-                        onPress={() => setCategory(c)}
+                        style={[styles.categoryDropdownItem, category === c && styles.categoryDropdownItemActive]}
+                        onPress={() => {
+                          setCategory(c);
+                          setShowCategoryPicker(false);
+                        }}
                       >
-                        <Text style={[styles.categoryPillText, isSelected && styles.categoryPillTextActive]}>
+                        <Text style={[styles.categoryDropdownText, category === c && styles.categoryDropdownTextActive]}>
                           {c}
                         </Text>
                       </Pressable>
-                    );
-                  })}
-                </ScrollView>
+                    ))}
+                  </View>
+                )}
 
-                {/* Brand */}
-                <Text style={[styles.inputLabel, { marginTop: 12 }]}>Brand / Manufacturer (Optional)</Text>
+                {/* Field 4: Additional Notes / Details */}
+                <Text style={styles.inputLabel}>
+                  Additional Notes / Details <Text style={styles.subtleOptional}>(Optional)</Text>
+                </Text>
                 <TextInput
-                  style={styles.inputBox}
-                  placeholder="e.g. Amul, Nestle, Paper Boat..."
-                  placeholderTextColor="#94A3B8"
-                  value={brand}
-                  onChangeText={setBrand}
-                />
-
-                {/* Notes */}
-                <Text style={[styles.inputLabel, { marginTop: 12 }]}>Additional Details / Pack Size (Optional)</Text>
-                <TextInput
-                  style={[styles.inputBox, { height: 70, textAlignVertical: 'top' }]}
-                  placeholder="e.g. 500g pouch, Sugar-free variant..."
+                  style={[styles.inputBox, styles.textAreaBox]}
+                  placeholder="Tell us why you want this product or any specific packaging details..."
                   placeholderTextColor="#94A3B8"
                   value={notes}
                   onChangeText={setNotes}
                   multiline
+                  numberOfLines={3}
+                />
+
+                {/* Field 5: Your Phone / Contact */}
+                <Text style={styles.inputLabel}>
+                  Your Phone / Contact <Text style={styles.subtleOptional}>(To notify you when stocked)</Text>
+                </Text>
+                <TextInput
+                  style={styles.inputBox}
+                  placeholder="+919999900001"
+                  placeholderTextColor="#94A3B8"
+                  value={contact}
+                  onChangeText={setContact}
+                  keyboardType="phone-pad"
                 />
 
                 {/* Submit Button */}
@@ -308,17 +344,17 @@ export default function ProductSuggestionModal({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
   },
   modalCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
+    borderRadius: 20,
     width: '100%',
-    maxWidth: 480,
-    maxHeight: '85%',
+    maxWidth: 420,
+    maxHeight: '90%',
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -327,42 +363,39 @@ const styles = StyleSheet.create({
   modalHeader: {
     padding: 16,
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#EFF6FF',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#DBEAFE',
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flex: 1,
+    borderBottomColor: '#F1F5F9',
+    gap: 12,
   },
   headerIconCircle: {
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     borderRadius: 12,
-    backgroundColor: '#0071E3',
+    backgroundColor: '#0066FF',
     justifyContent: 'center',
     alignItems: 'center',
   },
+  headerTextCol: {
+    flex: 1,
+  },
   headerTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '900',
     color: '#0F172A',
   },
   headerSub: {
     fontSize: 11,
     color: '#64748B',
-    fontWeight: '500',
-    marginTop: 1,
+    marginTop: 2,
+    lineHeight: 14,
   },
   closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#E2E8F0',
     justifyContent: 'center',
@@ -372,42 +405,49 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
   },
   tabBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
+    paddingVertical: 11,
     gap: 6,
   },
   tabBtnActive: {
     borderBottomWidth: 2,
-    borderBottomColor: '#0071E3',
+    borderBottomColor: '#0066FF',
     backgroundColor: '#FFFFFF',
   },
   tabBtnText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
     color: '#64748B',
   },
   tabBtnTextActive: {
-    color: '#0071E3',
+    color: '#0066FF',
     fontWeight: '900',
   },
   bodyContent: {
     padding: 16,
   },
-  formContainer: {},
+  formContainer: {
+    gap: 12,
+  },
   inputLabel: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#334155',
-    marginBottom: 6,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 4,
   },
   reqStar: {
     color: '#EF4444',
+  },
+  subtleOptional: {
+    fontSize: 11,
+    fontWeight: '400',
+    color: '#94A3B8',
   },
   inputBox: {
     backgroundColor: '#FFFFFF',
@@ -415,39 +455,65 @@ const styles = StyleSheet.create({
     borderColor: '#CBD5E1',
     borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 9,
     fontSize: 13,
     color: '#0F172A',
   },
-  categoryScroll: {
-    gap: 6,
-    paddingVertical: 4,
+  rowTwoCols: {
+    flexDirection: 'row',
+    gap: 10,
   },
-  categoryPill: {
-    backgroundColor: '#F1F5F9',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  dropdownSelectBtn: {
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  categoryPillActive: {
+  dropdownSelectText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0F172A',
+    flex: 1,
+    marginRight: 4,
+  },
+  categoryDropdownList: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    maxHeight: 160,
+    overflow: 'hidden',
+    ...SHADOWS.md,
+  },
+  categoryDropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  categoryDropdownItemActive: {
     backgroundColor: '#EFF6FF',
-    borderColor: '#0071E3',
-    borderWidth: 1.5,
   },
-  categoryPillText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#475569',
+  categoryDropdownText: {
+    fontSize: 12,
+    color: '#334155',
   },
-  categoryPillTextActive: {
-    color: '#0071E3',
-    fontWeight: '900',
+  categoryDropdownTextActive: {
+    color: '#0066FF',
+    fontWeight: '800',
+  },
+  textAreaBox: {
+    height: 72,
+    textAlignVertical: 'top',
   },
   submitBtn: {
-    marginTop: 18,
-    backgroundColor: '#0071E3',
+    marginTop: 8,
+    backgroundColor: '#0066FF',
     borderRadius: 12,
     paddingVertical: 12,
     flexDirection: 'row',

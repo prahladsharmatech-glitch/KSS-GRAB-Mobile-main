@@ -50,8 +50,6 @@ const getCatImgSource = (imgStr?: string) => {
   return { uri: optimizeImageUrl(clean, 300) };
 };
 
-const QUICK_SUB_CHIPS = ['Cookies', 'Frozen Food', '& Ghee'];
-
 export default function CategoriesPage() {
   const router = useRouter();
   const { totalItems } = useCart();
@@ -128,43 +126,9 @@ export default function CategoriesPage() {
           />
         </View>
 
-        {/* ── 4. FIRST 9 CATEGORIES GRID (3-COLUMN) ── */}
+        {/* ── ALL CATEGORIES GRID (3-COLUMN) ── */}
         <View style={styles.threeColumnGrid}>
-          {filteredCategories.slice(0, 9).map((cat) => (
-            <Pressable
-              key={cat.id}
-              style={styles.gridCard}
-              onPress={() => router.push(`/customer/category/${cat.slug}` as any)}
-            >
-              <View style={styles.imageBox}>
-                <Image
-                  source={getCatImgSource(cat.image)}
-                  style={styles.catImage}
-                  resizeMode="cover"
-                  fadeDuration={0}
-                />
-              </View>
-              <Text style={styles.catTitle} numberOfLines={2}>
-                {cat.name}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        {/* ── 5. QUICK SUB-CHIPS STRIP ── */}
-        {filteredCategories.length >= 9 && (
-          <View style={styles.quickSubRow}>
-            {QUICK_SUB_CHIPS.map((chip, idx) => (
-              <View key={idx} style={styles.quickSubPill}>
-                <Text style={styles.quickSubText}>{chip}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* ── 6. REMAINING CATEGORIES GRID (3-COLUMN) ── */}
-        <View style={styles.threeColumnGrid}>
-          {filteredCategories.slice(9).map((cat) => (
+          {filteredCategories.map((cat) => (
             <Pressable
               key={cat.id}
               style={styles.gridCard}
@@ -353,7 +317,7 @@ const styles = StyleSheet.create({
   threeColumnGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    gap: 8,
     rowGap: 12,
   },
   gridCard: {
@@ -380,13 +344,13 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   catTitle: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 9.5,
+    fontWeight: '700',
     color: '#0F172A',
     textAlign: 'center',
-    marginTop: 6,
-    lineHeight: 14,
-    height: 28,
+    marginTop: 4,
+    lineHeight: 12,
+    minHeight: 25,
   },
 
   /* Quick Sub Chips */

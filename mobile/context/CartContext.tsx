@@ -54,7 +54,7 @@ export const AVAILABLE_COUPONS: Coupon[] = [
 interface CartContextType {
   cart: CartItem[];
   items: CartItem[];
-  addToCart: (product: Product, qty?: number) => void;
+  addToCart: (product: Product | Product[], qty?: number) => void;
   removeFromCart: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
@@ -99,15 +99,23 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await setItem('grabit_cart', newCart);
   };
 
-  const addToCart = (product: Product, qty = 1) => {
-    const existingIndex = cart.findIndex((item) => item.product.id === product.id);
-    if (existingIndex > -1) {
-      const updated = [...cart];
-      updated[existingIndex].quantity += qty;
-      persistCart(updated);
-    } else {
-      persistCart([...cart, { product, quantity: qty }]);
-    }
+  const addToCart = (product: Product | Product[], qty = 1) => {
+    const productsToAdd = Array.isArray(product) ? product : [product];
+    let updatedCart = [...cart];
+
+    productsToAdd.forEach((p) => {
+      const existingIndex = updatedCart.findIndex((item) => String(item.product.id) === String(p.id));
+      if (existingIndex > -1) {
+        updatedCart[existingIndex] = {
+          ...updatedCart[existingIndex],
+          quantity: updatedCart[existingIndex].quantity + qty,
+        };
+      } else {
+        updatedCart.push({ product: p, quantity: qty });
+      }
+    });
+
+    persistCart(updatedCart);
   };
 
   const removeFromCart = (productId: string) => {

@@ -22,6 +22,7 @@ import { getItem, setItem } from '../../services/storage';
 import { products } from '../../data/products';
 import { getValidImage, optimizeImageUrl, DEFAULT_FALLBACK_IMAGE } from '../../services/cloudinary';
 import { NotificationModal } from '../../components/NotificationModal';
+import { CustomerTopHeader } from '../../components/CustomerTopHeader';
 import { getRealUserNotifications } from '../../utils/userNotifications';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import {
@@ -366,45 +367,8 @@ export default function OrdersPage() {
 
   return (
     <View style={styles.container}>
-      {/* ── 1. TOP HEADER ROW (BRAND + LOCATION + ACTIONS) ── */}
-      <View style={styles.topHeader}>
-        <View style={styles.headerLeftRow}>
-          <Pressable style={styles.brandContainer} onPress={() => router.push('/customer' as any)}>
-            <View style={styles.brandIcon}>
-              <Zap size={18} color="#FFFFFF" fill="#FFFFFF" />
-            </View>
-            <Text style={styles.brandName}>GrabIt</Text>
-          </Pressable>
-
-          <Pressable style={styles.locationPill} onPress={fetchCurrentLocation}>
-            <MapPin size={13} color="#0071E3" />
-            <Text style={styles.locationText} numberOfLines={1}>
-              {currentAddress.street || 'Baiyyappanahalli, Bengaluru'}
-            </Text>
-            <Text style={styles.locationChevron}>v</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.headerRightIcons}>
-          <Pressable style={styles.iconCircle} onPress={() => setIsNotifModalOpen(true)}>
-            <Bell size={18} color="#0071E3" />
-            {unreadNotifCount > 0 && (
-              <View style={styles.notifBadge}>
-                <Text style={styles.notifBadgeText}>{unreadNotifCount > 9 ? '9+' : unreadNotifCount}</Text>
-              </View>
-            )}
-          </Pressable>
-
-          <Pressable style={styles.iconCircle} onPress={() => router.push('/customer/cart' as any)}>
-            <ShoppingBag size={18} color="#0071E3" />
-            {cartCount > 0 ? (
-              <View style={styles.cartBadge}>
-                <Text style={styles.cartBadgeText}>{cartCount}</Text>
-              </View>
-            ) : null}
-          </Pressable>
-        </View>
-      </View>
+      {/* ── 1. EXACT HOME PAGE TOP HEADER ── */}
+      <CustomerTopHeader />
 
       {/* ── 2. BACK BUTTON & SEARCH ROW ── */}
       <View style={styles.searchHeaderRow}>

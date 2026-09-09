@@ -19,6 +19,7 @@ import { useToast } from '../../context/ToastContext';
 import { ProductCard } from '../../components/ProductCard';
 import { SearchAutocomplete } from '../../components/SearchAutocomplete';
 import { NotificationModal } from '../../components/NotificationModal';
+import ProductSuggestionModal from '../../components/ProductSuggestionModal';
 import { getRealUserNotifications } from '../../utils/userNotifications';
 import { get } from '../../services/api';
 import { Product, Category } from '../../types';
@@ -118,6 +119,7 @@ export default function CustomerHomeScreen() {
   const [isInitialLoading, setIsInitialLoading] = useState(true);
 
   const [isNotifModalOpen, setIsNotifModalOpen] = useState(false);
+  const [isSuggestModalOpen, setIsSuggestModalOpen] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
 
   const [activeTab, setActiveTab] = useState('All');
@@ -272,6 +274,21 @@ export default function CustomerHomeScreen() {
 
   const heroSlides = [
     {
+      bg: '#EEF4FF',
+      borderColor: '#93C5FD',
+      badge: '⚡ 30-45 MIN EXPRESS DELIVERY',
+      badgeColor: '#0066FF',
+      title: 'Discover. Shop. Save More.',
+      subtitle: 'Top brands, best prices & exclusive hyperlocal offers on everything you love.',
+      btn1Text: 'Shop Now',
+      btn1Bg: '#0066FF',
+      btn1Link: '/customer/categories',
+      btn2Text: 'Explore Offers',
+      btn2Color: '#0066FF',
+      btn2Link: '/customer/trending',
+      image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645109/grabit_media/savings_basket_clock_transparent.png',
+    },
+    {
       bg: '#DCFCE7',
       borderColor: '#86EFAC',
       badge: '🍃 FARM FRESH GUARANTEED',
@@ -280,22 +297,11 @@ export default function CustomerHomeScreen() {
       subtitle: 'Handpicked organic fruits, vegetables & daily essentials delivered to your doorstep.',
       btn1Text: 'Shop Groceries',
       btn1Bg: '#059669',
+      btn1Link: '/customer/category/produce',
       btn2Text: 'Explore Deals',
       btn2Color: '#059669',
+      btn2Link: '/customer/category/produce',
       image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645084/grabit_media/fresh_groceries_basket_only.png',
-    },
-    {
-      bg: '#EEF4FF',
-      borderColor: '#93C5FD',
-      badge: '⚡ 10-MIN EXPRESS DELIVERY',
-      badgeColor: '#0066FF',
-      title: 'Discover. Shop. Save More.',
-      subtitle: 'Top brands, best prices & exclusive hyperlocal offers on everything you love.',
-      btn1Text: 'Shop Now',
-      btn1Bg: '#0066FF',
-      btn2Text: 'Explore Offers',
-      btn2Color: '#0066FF',
-      image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645109/grabit_media/savings_basket_clock_transparent.png',
     },
     {
       bg: '#FFEDD5',
@@ -306,11 +312,62 @@ export default function CustomerHomeScreen() {
       subtitle: "From popcorn & chips to cookies, nachos & treats – we've got it all.",
       btn1Text: 'Shop Snacks',
       btn1Bg: '#D97706',
+      btn1Link: '/customer/category/snacks-munchies',
       btn2Text: 'View All',
       btn2Color: '#D97706',
-      image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645101/grabit_media/combo_munchies.jpg',
+      btn2Link: '/customer/category/snacks-munchies',
+      image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645100/grabit_media/category_snacks_banner.png',
     },
   ];
+
+  const slideTimerRef = useRef<any>(null);
+  const touchStartXRef = useRef<number>(0);
+
+  const startSlideTimer = useCallback(() => {
+    if (slideTimerRef.current) clearInterval(slideTimerRef.current);
+    slideTimerRef.current = setInterval(() => {
+      setActiveSlide((prev) => (prev + 1) % 3);
+    }, 4000);
+  }, []);
+
+  const resetSlideTimer = useCallback(() => {
+    startSlideTimer();
+  }, [startSlideTimer]);
+
+  const handleNextSlide = useCallback(() => {
+    setActiveSlide((prev) => (prev + 1) % 3);
+    resetSlideTimer();
+  }, [resetSlideTimer]);
+
+  const handlePrevSlide = useCallback(() => {
+    setActiveSlide((prev) => (prev - 1 + 3) % 3);
+    resetSlideTimer();
+  }, [resetSlideTimer]);
+
+  const handleDotSelect = useCallback((idx: number) => {
+    setActiveSlide(idx);
+    resetSlideTimer();
+  }, [resetSlideTimer]);
+
+  useFocusEffect(
+    useCallback(() => {
+      startSlideTimer();
+      return () => {
+        if (slideTimerRef.current) {
+          clearInterval(slideTimerRef.current);
+          slideTimerRef.current = null;
+        }
+      };
+    }, [startSlideTimer])
+  );
+
+  useEffect(() => {
+    heroSlides.forEach((slide) => {
+      if (slide.image) {
+        Image.prefetch(optimizeImageUrl(slide.image, 600)).catch(() => {});
+      }
+    });
+  }, []);
 
   const quickCatTabs = [
     { id: 'All', label: 'All', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645084/grabit_media/fresh_groceries_basket_only.png', slug: 'all', color: '#0071E3' },
@@ -430,7 +487,7 @@ export default function CustomerHomeScreen() {
                 onPress={() => {
                   setActiveTab(tab.id);
                   if (tab.slug === 'all') {
-                    router.push('/customer/categories' as any);
+                    router.push('/customer' as any);
                   } else {
                     router.push(`/customer/category/${tab.slug}` as any);
                   }
@@ -449,7 +506,20 @@ export default function CustomerHomeScreen() {
         </ScrollView>
 
         {/* ── 4. HERO CAROUSEL BANNER ── */}
-        <View style={[styles.heroSlide, { backgroundColor: heroSlides[activeSlide].bg, borderColor: heroSlides[activeSlide].borderColor }]}>
+        <View
+          style={[styles.heroSlide, { backgroundColor: heroSlides[activeSlide].bg, borderColor: heroSlides[activeSlide].borderColor }]}
+          onTouchStart={(e) => {
+            touchStartXRef.current = e.nativeEvent.pageX;
+          }}
+          onTouchEnd={(e) => {
+            const deltaX = e.nativeEvent.pageX - touchStartXRef.current;
+            if (deltaX < -35) {
+              handleNextSlide();
+            } else if (deltaX > 35) {
+              handlePrevSlide();
+            }
+          }}
+        >
           <View style={styles.heroBadge}>
             <Text style={[styles.heroBadgeText, { color: heroSlides[activeSlide].badgeColor }]}>
               {heroSlides[activeSlide].badge}
@@ -467,12 +537,24 @@ export default function CustomerHomeScreen() {
           <Text style={styles.heroSub}>{heroSlides[activeSlide].subtitle}</Text>
 
           <View style={styles.heroBtnRow}>
-            <Pressable style={[styles.heroBtn1, { backgroundColor: heroSlides[activeSlide].btn1Bg }]}>
+            <Pressable
+              style={[styles.heroBtn1, { backgroundColor: heroSlides[activeSlide].btn1Bg }]}
+              onPress={() => {
+                resetSlideTimer();
+                router.push(heroSlides[activeSlide].btn1Link as any);
+              }}
+            >
               <Text style={styles.heroBtn1Text}>{heroSlides[activeSlide].btn1Text}</Text>
               <ArrowRight size={14} color="#FFFFFF" style={{ marginLeft: 4 }} />
             </Pressable>
 
-            <Pressable style={[styles.heroBtn2, { borderColor: heroSlides[activeSlide].btn1Bg }]}>
+            <Pressable
+              style={[styles.heroBtn2, { borderColor: heroSlides[activeSlide].btn1Bg }]}
+              onPress={() => {
+                resetSlideTimer();
+                router.push(heroSlides[activeSlide].btn2Link as any);
+              }}
+            >
               <Text style={[styles.heroBtn2Text, { color: heroSlides[activeSlide].btn2Color }]}>
                 {heroSlides[activeSlide].btn2Text}
               </Text>
@@ -488,24 +570,29 @@ export default function CustomerHomeScreen() {
           />
 
           {/* Left / Right Carousel Arrows */}
-          <Pressable
-            style={styles.carouselArrowLeft}
-            onPress={() => setActiveSlide((prev) => (prev - 1 + heroSlides.length) % heroSlides.length)}
-          >
+          <Pressable style={styles.carouselArrowLeft} onPress={handlePrevSlide}>
             <ChevronLeft size={16} color="#0F172A" />
           </Pressable>
 
-          <Pressable
-            style={styles.carouselArrowRight}
-            onPress={() => setActiveSlide((prev) => (prev + 1) % heroSlides.length)}
-          >
+          <Pressable style={styles.carouselArrowRight} onPress={handleNextSlide}>
             <ChevronRight size={16} color="#0F172A" />
           </Pressable>
 
           {/* Carousel Dots */}
           <View style={styles.dotsRow}>
-            {heroSlides.map((_, idx) => (
-              <View key={idx} style={[styles.dot, activeSlide === idx && styles.dotActive]} />
+            {heroSlides.map((s, idx) => (
+              <Pressable
+                key={idx}
+                onPress={() => handleDotSelect(idx)}
+                hitSlop={8}
+                style={[
+                  styles.dot,
+                  activeSlide === idx && [
+                    styles.dotActive,
+                    { backgroundColor: s.badgeColor || '#0066FF', width: 20 },
+                  ],
+                ]}
+              />
             ))}
           </View>
         </View>
@@ -639,11 +726,11 @@ export default function CustomerHomeScreen() {
             </Pressable>
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4 }}>
-            {snacksProducts.map((p) => (
-              <ProductCard key={p.id} product={p} width={165} />
+          <View style={styles.productGrid}>
+            {snacksProducts.slice(0, 4).map((p) => (
+              <ProductCard key={p.id} product={p} width="48.5%" />
             ))}
-          </ScrollView>
+          </View>
         </View>
 
         {/* ── 10. EXACT SCREENSHOT 4 & 5 SUPER SAVERS EXCLUSIVE DEAL OFFERS ── */}
@@ -834,7 +921,7 @@ export default function CustomerHomeScreen() {
             </View>
           </View>
 
-          <Pressable style={styles.suggestBtn} onPress={() => showToast('Opening product suggestion form...', 'info')}>
+          <Pressable style={styles.suggestBtn} onPress={() => setIsSuggestModalOpen(true)}>
             <Sparkles size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
             <Text style={styles.suggestBtnText}>Suggest a Product</Text>
           </Pressable>
@@ -1009,6 +1096,11 @@ export default function CustomerHomeScreen() {
         visible={isNotifModalOpen}
         onClose={() => setIsNotifModalOpen(false)}
       />
+
+      <ProductSuggestionModal
+        isOpen={isSuggestModalOpen}
+        onClose={() => setIsSuggestModalOpen(false)}
+      />
     </View>
   );
 }
@@ -1176,7 +1268,7 @@ const styles = StyleSheet.create({
     fontSize: 22,
   },
   catTabLabel: {
-    fontSize: 11.5,
+    fontSize: 10,
     fontWeight: '700',
     color: '#475569',
   },

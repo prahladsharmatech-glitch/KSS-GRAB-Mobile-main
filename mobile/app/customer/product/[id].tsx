@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,12 +7,15 @@ import {
   Pressable,
   StyleSheet,
   Dimensions,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { get } from '../../../services/api';
 import { Product } from '../../../types';
 import { products as localProducts } from '../../../data/products';
 import { useCart } from '../../../context/CartContext';
+import { useAuth } from '../../../context/AuthContext';
 import { useWishlist } from '../../../context/WishlistContext';
 import { useToast } from '../../../context/ToastContext';
 import { LoadingView } from '../../../components/LoadingView';
@@ -41,8 +44,10 @@ import {
   Home,
   Grid,
   TrendingUp,
-  User,
   Leaf,
+  Tag,
+  X,
+  Lock,
 } from 'lucide-react-native';
 import { SearchAutocomplete } from '../../../components/SearchAutocomplete';
 
@@ -80,7 +85,19 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 export default function ProductDetailPage() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { cart, addToCart, updateQuantity } = useCart();
+  const { user } = useAuth();
+  const {
+    cart,
+    addToCart,
+    updateQuantity,
+    itemTotal,
+    deliveryFee,
+    appliedCoupon,
+    couponDiscount,
+    applyCoupon,
+    removeCoupon,
+    AVAILABLE_COUPONS,
+  } = useCart();
   const { toggleWishlist, isInWishlist } = useWishlist();
   const { showToast } = useToast();
 
@@ -91,6 +108,53 @@ export default function ProductDetailPage() {
   const [activeTab, setActiveTab] = useState<'details' | 'reviews' | 'nutritional'>('details');
   const [isHighlightsExpanded, setIsHighlightsExpanded] = useState<boolean>(false);
   const [isInfoExpanded, setIsInfoExpanded] = useState<boolean>(false);
+
+  const [isCouponModalOpen, setIsCouponModalOpen] = useState(false);
+  const [couponInputCode, setCouponInputCode] = useState('');
+  const [couponFeedback, setCouponFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const couponTimerRef = useRef<any>(null);
+
+  const availableCouponsCount = (AVAILABLE_COUPONS || []).filter(
+    (c) => !(c.discountType === 'free_delivery' && (deliveryFee === 0 || itemTotal >= 100))
+  ).length;
+
+  const maxSavings = Math.max(
+    ...(AVAILABLE_COUPONS || []).map((c) =>
+      c.discountType === 'free_delivery' ? (deliveryFee || 30) : c.discountValue
+    ),
+    100
+  );
+
+  const handleCloseCouponModal = () => {
+    if (couponTimerRef.current) {
+      clearTimeout(couponTimerRef.current);
+      couponTimerRef.current = null;
+    }
+    setIsCouponModalOpen(false);
+    setCouponFeedback(null);
+    setCouponInputCode('');
+  };
+
+  const handleApplyCouponCode = (code: string) => {
+    if (couponTimerRef.current) {
+      clearTimeout(couponTimerRef.current);
+      couponTimerRef.current = null;
+    }
+    const res = applyCoupon(code);
+    if (res.success) {
+      setCouponFeedback({ type: 'success', text: res.message });
+      showToast(res.message, 'success');
+      couponTimerRef.current = setTimeout(() => {
+        setIsCouponModalOpen(false);
+        setCouponFeedback(null);
+        setCouponInputCode('');
+        couponTimerRef.current = null;
+      }, 1200);
+    } else {
+      setCouponFeedback({ type: 'error', text: res.message });
+      showToast(res.message, 'error');
+    }
+  };
 
   useEffect(() => {
     // Check local data first for instant 0ms rendering
@@ -180,14 +244,44 @@ export default function ProductDetailPage() {
   const currentMRP = selectedPack.mrp;
   const savingsAmount = currentMRP - currentPrice;
 
-  // Bundle items for "Frequently Bought Together"
-  const bundleItems = [
-    item,
-    localProducts[1] || item,
-    localProducts[2] || item,
-  ];
-  const bundlePrice = 1320;
-  const bundleMRP = 1552;
+  // Companion categories dictionary matching React Web 1:1
+  const COMPANION_CATEGORIES: Record<string, string[]> = {
+    'produce': ['staples', 'dairy', 'produce'],
+    'staples': ['staples', 'oils-ghee', 'masalas-spices', 'produce'],
+    'oils-ghee': ['staples', 'masalas-spices', 'produce'],
+    'masalas-spices': ['staples', 'produce', 'oils-ghee'],
+    'dairy': ['bakery', 'biscuits', 'tea-coffee', 'dairy'],
+    'tea-coffee': ['dairy', 'biscuits', 'breakfast'],
+    'breakfast': ['dairy', 'tea-coffee', 'biscuits'],
+    'biscuits': ['tea-coffee', 'dairy', 'snacks'],
+    'snacks': ['beverages', 'chocolates', 'snacks'],
+    'beverages': ['snacks', 'biscuits', 'chocolates'],
+    'chocolates': ['biscuits', 'snacks', 'beverages'],
+    'instant-food': ['beverages', 'snacks', 'instant-food'],
+    'household': ['household', 'personal-care'],
+    'personal-care': ['personal-care', 'household'],
+  };
+
+  // Frequently Bought Together algorithm matching React Web 1:1
+  const bundleItems = React.useMemo(() => {
+    if (!item) return [];
+    const cat = item.category || '';
+    const companionCats = COMPANION_CATEGORIES[cat] || [cat, 'staples', 'snacks'];
+    const candidates = localProducts.filter((p) => String(p.id) !== String(item.id) && p.inStock !== false);
+
+    let c1 = candidates.find((p) => p.category === companionCats[0]);
+    if (!c1) c1 = candidates.find((p) => p.category === cat);
+    if (!c1) c1 = candidates[0];
+
+    let c2 = candidates.find((p) => p.category === (companionCats[1] || companionCats[0]) && String(p.id) !== String(c1?.id));
+    if (!c2) c2 = candidates.find((p) => String(p.id) !== String(c1?.id) && (p.category === cat || p.category === companionCats[2]));
+    if (!c2) c2 = candidates.find((p) => String(p.id) !== String(c1?.id));
+
+    return [item, c1, c2].filter(Boolean) as Product[];
+  }, [item]);
+
+  const bundlePrice = React.useMemo(() => bundleItems.reduce((s, i) => s + Number(i.price || 0), 0), [bundleItems]);
+  const bundleMRP = React.useMemo(() => bundleItems.reduce((s, i) => s + Number(i.originalPrice || (i as any).mrp || (i.price || 0) + 10), 0), [bundleItems]);
   const bundleSavings = bundleMRP - bundlePrice;
 
   // Similar products
@@ -384,6 +478,64 @@ export default function ProductDetailPage() {
                 Delivering in Rabyappanahalli, Bengaluru 560048 • <Text style={{ color: '#0066FF', fontWeight: '700' }}>Tap to change</Text>
               </Text>
             </View>
+          </View>
+
+          {/* Coupons & Offers Banner Card */}
+          <View style={{ marginBottom: 14 }}>
+            {!user ? (
+              <View style={styles.couponsLockBox}>
+                <View style={styles.lockIconCircle}>
+                  <Lock size={16} color="#111827" />
+                </View>
+                <Text style={styles.lockTitle}>Login to view coupons</Text>
+                <Text style={styles.lockSub}>
+                  Log in to see 100+ coupons & unlocked bank cashback offers
+                </Text>
+              </View>
+            ) : appliedCoupon ? (
+              <View style={styles.appliedCouponBox}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 }}>
+                  <CheckCircle2 size={18} color="#10B981" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.appliedCouponTitle}>
+                      Coupon "{appliedCoupon.code}" Applied!
+                    </Text>
+                    <Text style={styles.appliedCouponSub}>
+                      {appliedCoupon.discountType === 'free_delivery'
+                        ? 'Free Express Delivery unlocked'
+                        : `Saved extra ₹${couponDiscount} on this order`}
+                    </Text>
+                  </View>
+                </View>
+                <Pressable
+                  style={styles.removeCouponBtn}
+                  onPress={() => {
+                    removeCoupon();
+                    showToast('Coupon removed', 'info');
+                  }}
+                >
+                  <Text style={styles.removeCouponText}>Remove</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                style={styles.unlockedCouponBanner}
+                onPress={() => setIsCouponModalOpen(true)}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                  <Tag size={18} color="#10B981" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.unlockedCouponTitle}>
+                      {availableCouponsCount} Coupons Available
+                    </Text>
+                    <Text style={styles.unlockedCouponSub}>
+                      Save up to ₹{maxSavings} extra with promo codes
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.applyArrowText}>Apply →</Text>
+              </Pressable>
+            )}
           </View>
 
           {/* Dual Action Buttons Row */}
@@ -616,15 +768,20 @@ export default function ProductDetailPage() {
 
             {/* Product Thumbnails Row */}
             <View style={styles.bundleThumbRow}>
-              <Image source={resolveProductImage(item.image)} style={styles.bundleImg} fadeDuration={0} />
-              <Text style={styles.bundlePlus}>+</Text>
-              <Image source={resolveProductImage(bundleItems[1].image)} style={styles.bundleImg} fadeDuration={0} />
-              <Text style={styles.bundlePlus}>+</Text>
-              <Image source={resolveProductImage(bundleItems[2].image)} style={styles.bundleImg} fadeDuration={0} />
+              {bundleItems.map((bItem, bIdx) => (
+                <React.Fragment key={bItem.id || bIdx}>
+                  <Image source={resolveProductImage(bItem.image)} style={styles.bundleImg} fadeDuration={0} resizeMode="contain" />
+                  {bIdx < bundleItems.length - 1 && (
+                    <View style={styles.bundlePlusBadge}>
+                      <Text style={styles.bundlePlusText}>+</Text>
+                    </View>
+                  )}
+                </React.Fragment>
+              ))}
             </View>
 
             <View style={styles.bundlePriceRow}>
-              <Text style={styles.bundlePriceLabel}>Bundle Price (3 Items):</Text>
+              <Text style={styles.bundlePriceLabel}>Bundle Price ({bundleItems.length} Items):</Text>
               <Text style={styles.bundleMainPrice}>₹{bundlePrice}</Text>
               <Text style={styles.bundleMrpPrice}>₹{bundleMRP}</Text>
               <Text style={styles.bundleSaveText}>Save ₹{bundleSavings}</Text>
@@ -633,11 +790,11 @@ export default function ProductDetailPage() {
             <Pressable
               style={styles.addBundleBtn}
               onPress={() => {
-                bundleItems.forEach((b) => addToCart(b));
-                showToast('Added 3 items bundle to cart!', 'success');
+                addToCart(bundleItems);
+                showToast(`Added ${bundleItems.length} bundle items (₹${bundlePrice}) to Cart!`, 'success');
               }}
             >
-              <Text style={styles.addBundleBtnText}>Add 3 Items to Cart (₹{bundlePrice})</Text>
+              <Text style={styles.addBundleBtnText}>Add {bundleItems.length} Items to Cart (₹{bundlePrice})</Text>
             </Pressable>
           </View>
 
@@ -690,6 +847,119 @@ export default function ProductDetailPage() {
           </View>
         </View>
       </ScrollView>
+
+      {/* ── 🌟 INTERACTIVE COUPONS & OFFERS MODAL ── */}
+      <Modal
+        visible={isCouponModalOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={handleCloseCouponModal}
+      >
+        <Pressable style={styles.modalOverlay} onPress={handleCloseCouponModal}>
+          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+            <Pressable style={styles.modalCloseBtn} onPress={handleCloseCouponModal}>
+              <X size={16} color="#0F172A" />
+            </Pressable>
+
+            <View style={styles.modalHeaderRow}>
+              <Tag size={22} color="#0071E3" style={{ marginRight: 8 }} />
+              <Text style={styles.modalHeaderTitle}>Coupons & Offers</Text>
+            </View>
+
+            {/* Custom Promo Code Input Box */}
+            <View style={styles.modalInputRow}>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="ENTER PROMO CODE (e.g. GRABIT50)"
+                placeholderTextColor="#94A3B8"
+                value={couponInputCode}
+                onChangeText={(t) => setCouponInputCode(t.toUpperCase())}
+                autoCapitalize="characters"
+              />
+              <Pressable
+                style={styles.modalApplyBtn}
+                onPress={() => handleApplyCouponCode(couponInputCode)}
+              >
+                <Text style={styles.modalApplyBtnText}>Apply</Text>
+              </Pressable>
+            </View>
+
+            {couponFeedback ? (
+              <View
+                style={[
+                  styles.feedbackBanner,
+                  couponFeedback.type === 'success' ? styles.feedbackSuccess : styles.feedbackError,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.feedbackText,
+                    couponFeedback.type === 'success' ? styles.feedbackSuccessText : styles.feedbackErrorText,
+                  ]}
+                >
+                  {couponFeedback.text}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* Available Coupons List */}
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 380 }}>
+              <Text style={styles.availableSectionHeading}>Available Coupons for You</Text>
+
+              {(AVAILABLE_COUPONS || []).map((c) => {
+                const isFreeDeliveryAlready = c.discountType === 'free_delivery' && itemTotal >= 100;
+                const isEligible = itemTotal >= c.minOrder && !isFreeDeliveryAlready;
+                const isCurrent = appliedCoupon?.code === c.code;
+
+                return (
+                  <View
+                    key={c.code}
+                    style={[styles.couponCardItem, isCurrent && styles.couponCardItemActive]}
+                  >
+                    <View style={styles.couponCardHeader}>
+                      <View style={{ flex: 1, marginRight: 8 }}>
+                        <View style={styles.badgePill}>
+                          <Text style={styles.badgePillText}>{c.badge}</Text>
+                        </View>
+                        <Text style={styles.couponTitle}>{c.title}</Text>
+                        <Text style={styles.couponDesc}>{c.description}</Text>
+                      </View>
+
+                      {isFreeDeliveryAlready ? (
+                        <View style={styles.freeDelBadge}>
+                          <Text style={styles.freeDelBadgeText}>FREE DELIVERY</Text>
+                        </View>
+                      ) : isEligible ? (
+                        <Pressable
+                          style={[styles.couponActionBtn, isCurrent && styles.couponActionBtnApplied]}
+                          onPress={() => handleApplyCouponCode(c.code)}
+                        >
+                          <Text style={styles.couponActionBtnText}>
+                            {isCurrent ? 'APPLIED' : 'APPLY'}
+                          </Text>
+                        </Pressable>
+                      ) : (
+                        <Pressable
+                          style={styles.lockedBadge}
+                          onPress={() => {
+                            const diff = c.minOrder - itemTotal;
+                            setCouponFeedback({
+                              type: 'error',
+                              text: `Add ₹${diff} more items to apply code ${c.code}`,
+                            });
+                          }}
+                        >
+                          <Text style={styles.lockedBadgeText}>LOCKED</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -1324,10 +1594,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#FDE68A',
   },
-  bundlePlus: {
-    fontSize: 18,
+  bundlePlusBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#FFF3E0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bundlePlusText: {
+    fontSize: 14,
     fontWeight: '900',
-    color: '#D97706',
+    color: '#FF6B00',
   },
   bundlePriceRow: {
     flexDirection: 'row',
@@ -1487,5 +1765,282 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#64748B',
     marginTop: 2,
+  },
+
+  /* Coupons & Offers Banner */
+  couponsLockBox: {
+    backgroundColor: '#FAF5FF',
+    borderWidth: 1.5,
+    borderColor: '#E9D5FF',
+    borderStyle: 'dashed',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lockIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F3E8FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  lockTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#111827',
+  },
+  lockSub: {
+    fontSize: 11,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginTop: 2,
+  },
+
+  unlockedCouponBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#A7F3D0',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderRadius: 16,
+  },
+  unlockedCouponTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#065F46',
+  },
+  unlockedCouponSub: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#047857',
+    marginTop: 2,
+  },
+  applyArrowText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#10B981',
+  },
+
+  appliedCouponBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#A7F3D0',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderRadius: 16,
+  },
+  appliedCouponTitle: {
+    fontSize: 13.5,
+    fontWeight: '900',
+    color: '#065F46',
+  },
+  appliedCouponSub: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#047857',
+    marginTop: 2,
+  },
+  removeCouponBtn: {
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
+  removeCouponText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#EF4444',
+  },
+
+  /* Modal Styles */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: '85%',
+    position: 'relative',
+    ...SHADOWS.lg,
+  },
+  modalCloseBtn: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#0F172A',
+  },
+  modalInputRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  modalInput: {
+    flex: 1,
+    height: 44,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  modalApplyBtn: {
+    backgroundColor: '#0071E3',
+    borderRadius: 12,
+    paddingHorizontal: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalApplyBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
+  feedbackBanner: {
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 12,
+  },
+  feedbackSuccess: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  feedbackError: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+  },
+  feedbackText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  feedbackSuccessText: {
+    color: '#065F46',
+  },
+  feedbackErrorText: {
+    color: '#991B1B',
+  },
+
+  availableSectionHeading: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+  couponCardItem: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 10,
+  },
+  couponCardItemActive: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 2,
+    borderColor: '#0071E3',
+  },
+  couponCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  badgePill: {
+    backgroundColor: '#DBEAFE',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginBottom: 6,
+  },
+  badgePillText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#1E40AF',
+  },
+  couponTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#0F172A',
+  },
+  couponDesc: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  couponActionBtn: {
+    backgroundColor: '#0071E3',
+    paddingVertical: 7,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+  },
+  couponActionBtnApplied: {
+    backgroundColor: '#10B981',
+  },
+  couponActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  freeDelBadge: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  freeDelBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#059669',
+  },
+  lockedBadge: {
+    backgroundColor: '#E2E8F0',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  lockedBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#64748B',
   },
 });

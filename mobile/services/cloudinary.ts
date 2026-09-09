@@ -51,6 +51,8 @@ export const ASSET_FILENAME_MAP: Record<string, string> = {
   'sneakers.jpg': 'https://res.cloudinary.com/hmx3azp6/image/upload/c_fill,w_300,q_auto,f_auto/grabit_media/sneakers.jpg',
   'combo-munchies.jpg': 'https://res.cloudinary.com/hmx3azp6/image/upload/c_fill,w_300,q_auto,f_auto/grabit_media/combo_munchies.jpg',
   'combo_munchies.jpg': 'https://res.cloudinary.com/hmx3azp6/image/upload/c_fill,w_300,q_auto,f_auto/grabit_media/combo_munchies.jpg',
+  'category-snacks-banner.png': 'https://res.cloudinary.com/hmx3azp6/image/upload/c_fill,w_600,q_auto,f_auto/grabit_media/category_snacks_banner.png',
+  'category_snacks_banner.png': 'https://res.cloudinary.com/hmx3azp6/image/upload/c_fill,w_600,q_auto,f_auto/grabit_media/category_snacks_banner.png',
   'category-baby-care.jpg': 'https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=300',
   'category_baby_care.jpg': 'https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=300',
   'category-pet-care.jpg': 'https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=300',

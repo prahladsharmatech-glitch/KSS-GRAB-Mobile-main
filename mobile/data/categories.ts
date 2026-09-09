@@ -10,13 +10,13 @@ export interface CategoryItem {
 
 export const baseCloudinaryCategories: CategoryItem[] = [
   {
-    "id": "all",
-    "name": "All",
-    "slug": "all",
-    "icon": "\ud83d\udecd\ufe0f",
-    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/c_fill,w_300,q_auto,f_auto/grabit_media/fresh_groceries_basket_only.png",
-    "itemCount": 142,
-    "stock": 7153
+    "id": 8,
+    "name": "Fresh Fruits & Veggies",
+    "slug": "produce",
+    "icon": "🍎",
+    "image": "https://res.cloudinary.com/hmx3azp6/image/upload/c_fill,w_300,q_auto,f_auto/grabit_media/fresh_produce_splash_transparent.png",
+    "itemCount": 15,
+    "stock": 410
   },
   {
     "id": 1,
@@ -80,15 +80,6 @@ export const baseCloudinaryCategories: CategoryItem[] = [
     "image": "https://res.cloudinary.com/hmx3azp6/image/upload/c_fill,w_300,q_auto,f_auto/grabit_media/surf_excel_real.jpg",
     "itemCount": 5,
     "stock": 280
-  },
-  {
-    "id": 8,
-    "name": "Fresh Fruits & Veggies",
-    "slug": "produce",
-    "icon": "\ud83c\udf4e",
-    "image": "https://images.unsplash.com/photo-1610832958506-aa56368176cf?w=400&q=80",
-    "itemCount": 7,
-    "stock": 410
   },
   {
     "id": 9,

@@ -15,6 +15,7 @@ import { get } from '../../../services/api';
 import { Product } from '../../../types';
 import { products as localProducts } from '../../../data/products';
 import { ProductCard } from '../../../components/ProductCard';
+import ProductSuggestionModal from '../../../components/ProductSuggestionModal';
 import { SearchAutocomplete } from '../../../components/SearchAutocomplete';
 import { CustomerTopHeader } from '../../../components/CustomerTopHeader';
 import { LoadingView } from '../../../components/LoadingView';
@@ -100,7 +101,7 @@ const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     badgeTextColor: '#34D399',
     bannerImage: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645111/grabit_media/fresh_produce_splash_transparent.png',
     subcategories: [
-      { id: 'All', label: 'All' },
+      { id: 'All', label: 'All', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645111/grabit_media/fresh_produce_splash_transparent.png' },
       { id: 'Fresh Fruits', label: 'Fresh Fruits', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645128/grabit_media/apples_real.jpg' },
       { id: 'Fresh Vegetables', label: 'Fresh Vegetables', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645093/grabit_media/fresh_red_apples_real.jpg' },
     ],
@@ -608,6 +609,7 @@ export default function CategoryProductsPage() {
   const [selectedSubcat, setSelectedSubcat] = useState<string>('All');
   const [sortBy, setSortBy] = useState<'relevance' | 'low_high' | 'high_low' | 'rating' | 'discount'>('relevance');
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [isSuggestModalOpen, setIsSuggestModalOpen] = useState(false);
   const [visibleCount, setVisibleCount] = useState<number>(20);
   const lastFetchRef = useRef<number>(0);
 
@@ -793,7 +795,7 @@ export default function CategoryProductsPage() {
                   style={styles.topCatItem}
                   onPress={() => {
                     if (cat.id === 'all') {
-                      router.push('/customer/categories' as any);
+                      router.push('/customer' as any);
                     } else {
                       setActiveCategoryKey(cat.id);
                       router.push(`/customer/category/${cat.id}` as any);
@@ -852,17 +854,17 @@ export default function CategoryProductsPage() {
                   style={[styles.subCatCard, isSelected && styles.subCatCardActive]}
                   onPress={() => setSelectedSubcat(sub.id)}
                 >
-                  {sub.id === 'All' ? (
-                    <View style={styles.subCatIconWrapper}>
-                      <Grid size={18} color={isSelected ? '#0066FF' : '#64748B'} />
-                    </View>
-                  ) : (
+                  {sub.image ? (
                     <Image
-                      source={{ uri: optimizeImageUrl(sub.image || '', 200) }}
+                      source={{ uri: optimizeImageUrl(sub.image, 200) }}
                       style={styles.subCatThumbImg}
                       resizeMode="contain"
                       fadeDuration={0}
                     />
+                  ) : (
+                    <View style={styles.subCatIconWrapper}>
+                      <Grid size={18} color={isSelected ? '#0066FF' : '#64748B'} />
+                    </View>
                   )}
                   <Text style={[styles.subCatText, isSelected && styles.subCatTextActive]} numberOfLines={2}>
                     {sub.label}
@@ -916,7 +918,7 @@ export default function CategoryProductsPage() {
           <>
             <View style={styles.gridContainer}>
               {visibleProducts.map((item) => (
-                <ProductCard key={item.id} product={item} />
+                <ProductCard key={item.id} product={item} width="48.5%" />
               ))}
             </View>
 
@@ -956,7 +958,7 @@ export default function CategoryProductsPage() {
 
           <Pressable
             style={styles.suggestSubmitBtn}
-            onPress={() => showToast('Thank you! Item suggestion recorded.', 'success')}
+            onPress={() => setIsSuggestModalOpen(true)}
           >
             <Sparkles size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
             <Text style={styles.suggestSubmitText}>Suggest Product</Text>
@@ -1016,6 +1018,12 @@ export default function CategoryProductsPage() {
           </View>
         </View>
       </Modal>
+
+      <ProductSuggestionModal
+        isOpen={isSuggestModalOpen}
+        onClose={() => setIsSuggestModalOpen(false)}
+        prefillCategory={activeConfig.title}
+      />
     </View>
   );
 }
@@ -1143,7 +1151,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   topCatText: {
-    fontSize: 11.5,
+    fontSize: 10,
     fontWeight: '700',
     color: '#475569',
   },
@@ -1233,7 +1241,7 @@ const styles = StyleSheet.create({
     height: 22,
   },
   subCatText: {
-    fontSize: 12,
+    fontSize: 10.5,
     fontWeight: '700',
     color: '#334155',
   },
@@ -1281,6 +1289,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     paddingHorizontal: SPACING.md,
     justifyContent: 'space-between',
+    rowGap: 12,
   },
 
   /* Suggest a Product Banner */
