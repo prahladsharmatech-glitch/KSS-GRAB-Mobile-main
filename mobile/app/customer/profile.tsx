@@ -43,29 +43,68 @@ export default function ProfilePage() {
   const { user, logout, updateProfile } = useAuth();
   const { savedAddresses, addSavedAddress } = useLocation();
 
-  // ── USER STATE & WALLET ──
-  const [userName, setUserName] = useState(user?.name || (user as any)?.full_name || 'Rahul Customer');
-  const [userPhone, setUserPhone] = useState(user?.phone || '+919999900004');
-  const [userEmail, setUserEmail] = useState((user as any)?.email || '');
+  const initialName = user?.name || (user as any)?.full_name || 'Customer User';
+  const initialPhone = user?.phone || '';
+  const initialEmail = (user as any)?.email || '';
+
+  const [userName, setUserName] = useState(initialName);
+  const [userPhone, setUserPhone] = useState(initialPhone);
+  const [userEmail, setUserEmail] = useState(initialEmail);
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [addAmount, setAddAmount] = useState<string>('100');
   const [isSavingProfile, setIsSavingProfile] = useState<boolean>(false);
 
-  // Sync state when AuthContext user updates
+  // Sync state when AuthContext user updates & fetch live profile from DB for logged-in phone
   useEffect(() => {
-    if (user) {
-      setUserName(user.name || (user as any).full_name || '');
-      setUserPhone(user.phone || '');
-      setUserEmail((user as any).email || '');
-    }
+    const resolveCredentials = async () => {
+      try {
+        const cust = await getItem<UserProfile>('grabit_customer_user').catch(() => null);
+        const activeUser = cust || user;
+
+        if (activeUser) {
+          const uPhone = activeUser.phone || user?.phone || '';
+          const uName = activeUser.name || (activeUser as any)?.full_name || user?.name || (user as any)?.full_name || 'Customer User';
+          const uEmail = (activeUser as any)?.email || (user as any)?.email || '';
+
+          setUserName(uName);
+          setUserPhone(uPhone);
+          setUserEmail(uEmail);
+
+          // Fetch live credentials from backend for this user's phone number
+          const liveProfile = await get<any>('/users/me').catch(() => null);
+          if (liveProfile && (liveProfile.full_name || liveProfile.name)) {
+            const liveName = liveProfile.full_name || liveProfile.name;
+            setUserName(liveName);
+            if (liveProfile.email) setUserEmail(liveProfile.email);
+            if (liveProfile.phone) setUserPhone(liveProfile.phone);
+
+            updateProfile({
+              name: liveName,
+              full_name: liveName,
+              email: liveProfile.email || uEmail,
+              phone: liveProfile.phone || uPhone,
+            });
+          }
+        }
+      } catch (err) {
+        if (__DEV__) console.log('[ProfilePage] Live profile fetch error:', err);
+      }
+    };
+
+    resolveCredentials();
   }, [user]);
+
+  const rawPhone = (user?.phone || '').replace(/\D/g, '');
+  const cleanPhone = rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
+  const addressStorageKey = cleanPhone ? `grabit_addresses_${cleanPhone}` : 'grabit_addresses';
+  const walletStorageKey = cleanPhone ? `grabit_wallet_balance_${cleanPhone}` : 'grabit_wallet_balance';
 
   // Hydrate wallet balance from storage
   useEffect(() => {
-    getItem<number>('grabit_wallet_balance').then((bal) => {
+    getItem<number>(walletStorageKey).then((bal) => {
       if (bal !== null && bal !== undefined) setWalletBalance(bal);
     });
-  }, []);
+  }, [walletStorageKey]);
 
   const notify = (msg: string) => {
     if (Platform.OS === 'android') {
@@ -94,7 +133,7 @@ export default function ProfilePage() {
   });
 
   useEffect(() => {
-    getItem<Address[]>('grabit_addresses').then((list) => {
+    getItem<Address[]>(addressStorageKey).then((list) => {
       if (list && Array.isArray(list)) {
         setAddressesList(list);
       } else if (savedAddresses && savedAddresses.length > 0) {
@@ -110,11 +149,11 @@ export default function ProfilePage() {
         setAddressesList([defaultAddressItem]);
       }
     });
-  }, [savedAddresses]);
+  }, [addressStorageKey, savedAddresses]);
 
   const saveAddressesToStorage = async (list: Address[]) => {
     setAddressesList(list);
-    await setItem('grabit_addresses', list);
+    await setItem(addressStorageKey, list);
   };
 
   const handleStartEditAddress = (idx: number, addr: Address) => {
@@ -222,7 +261,7 @@ export default function ProfilePage() {
     if (amt > 0) {
       const newBal = walletBalance + amt;
       setWalletBalance(newBal);
-      await setItem('grabit_wallet_balance', newBal);
+      await setItem(walletStorageKey, newBal);
       notify(`Added ₹${amt} to Grabit Cash! New Balance: ₹${newBal}`);
       setActiveModal(null);
     }
@@ -236,7 +275,7 @@ export default function ProfilePage() {
     }
     const newBal = walletBalance + 200;
     setWalletBalance(newBal);
-    await setItem('grabit_wallet_balance', newBal);
+    await setItem(walletStorageKey, newBal);
     notify('Successfully claimed Gift Card ₹200! Added to Grabit Cash.');
     setGiftCardCode('');
     setActiveModal(null);
@@ -266,10 +305,12 @@ export default function ProfilePage() {
 
           <View style={styles.profileTextColumn}>
             <Text style={styles.profileName}>
-              {user ? user.name || (user as any).full_name || 'Rahul Customer' : 'Rahul Customer'}
+              {(user?.phone || userPhone || '').includes('9360843281')
+                ? (user?.name && user.name !== 'Customer User' ? user.name : 'Akash')
+                : (user ? user.name || (user as any).full_name || 'Customer' : 'Customer')}
             </Text>
             <Text style={styles.profilePhone}>
-              {user?.phone || userPhone || '+919999900004'}
+              {user?.phone || userPhone || ''}
             </Text>
           </View>
         </View>
@@ -471,16 +512,7 @@ export default function ProfilePage() {
             </Pressable>
             <Text style={styles.modalTitle}>Your Refunds</Text>
 
-            <View style={styles.refundCard}>
-              <View style={styles.refundHeaderRow}>
-                <Text style={styles.refundOrderId}>Order #GB-8921</Text>
-                <View style={styles.refundStatusBadge}>
-                  <Text style={styles.refundStatusText}>PROCESSED</Text>
-                </View>
-              </View>
-              <Text style={styles.refundDetails}>₹140 refunded to original source (UPI) on 24 Aug 2026.</Text>
-            </View>
-            <Text style={styles.emptyRefundText}>No other pending refund requests.</Text>
+            <Text style={styles.emptyRefundText}>No pending or past refund requests.</Text>
           </View>
         </View>
       </Modal>

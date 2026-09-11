@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { CartItem, Product } from '../types';
 import { getItem, setItem } from '../services/storage';
 
@@ -78,82 +78,120 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
+  const saveTimeoutRef = useRef<any>(null);
 
   useEffect(() => {
-    loadCart();
+    let isMounted = true;
+    Promise.all([
+      getItem<CartItem[]>('grabit_cart'),
+      getItem<Coupon>('grabit_applied_coupon'),
+    ]).then(([savedCart, savedCoupon]) => {
+      if (!isMounted) return;
+      if (savedCart && Array.isArray(savedCart)) {
+        setCart(savedCart);
+      }
+      if (savedCoupon && savedCoupon.code) {
+        setAppliedCoupon(savedCoupon);
+      }
+    }).catch(() => {});
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  const loadCart = async () => {
-    const saved = await getItem<CartItem[]>('grabit_cart');
-    if (saved && Array.isArray(saved)) {
-      setCart(saved);
-    }
-    const savedCoupon = await getItem<Coupon>('grabit_applied_coupon');
-    if (savedCoupon && savedCoupon.code) {
-      setAppliedCoupon(savedCoupon);
-    }
-  };
+  // Debounced asynchronous storage write to avoid blocking the JS thread on rapid button clicks
+  const scheduleStoragePersist = useCallback((updatedCart: CartItem[]) => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      setItem('grabit_cart', updatedCart);
+    }, 150);
+  }, []);
 
-  const persistCart = async (newCart: CartItem[]) => {
-    setCart(newCart);
-    await setItem('grabit_cart', newCart);
-  };
-
-  const addToCart = (product: Product | Product[], qty = 1) => {
+  const addToCart = useCallback((product: Product | Product[], qty = 1) => {
     const productsToAdd = Array.isArray(product) ? product : [product];
-    let updatedCart = [...cart];
-
-    productsToAdd.forEach((p) => {
-      const existingIndex = updatedCart.findIndex((item) => String(item.product.id) === String(p.id));
-      if (existingIndex > -1) {
-        updatedCart[existingIndex] = {
-          ...updatedCart[existingIndex],
-          quantity: updatedCart[existingIndex].quantity + qty,
-        };
-      } else {
-        updatedCart.push({ product: p, quantity: qty });
-      }
+    setCart((prevCart) => {
+      const updated = [...prevCart];
+      productsToAdd.forEach((p) => {
+        const pIdStr = String(p.id);
+        const existingIndex = updated.findIndex((item) => String(item.product.id) === pIdStr);
+        if (existingIndex > -1) {
+          updated[existingIndex] = {
+            ...updated[existingIndex],
+            quantity: updated[existingIndex].quantity + qty,
+          };
+        } else {
+          updated.push({ product: p, quantity: qty });
+        }
+      });
+      scheduleStoragePersist(updated);
+      return updated;
     });
+  }, [scheduleStoragePersist]);
 
-    persistCart(updatedCart);
-  };
+  const removeFromCart = useCallback((productId: string) => {
+    const pIdStr = String(productId);
+    setCart((prevCart) => {
+      const updated = prevCart.filter((item) => String(item.product.id) !== pIdStr);
+      scheduleStoragePersist(updated);
+      return updated;
+    });
+  }, [scheduleStoragePersist]);
 
-  const removeFromCart = (productId: string) => {
-    const updated = cart.filter((item) => item.product.id !== productId);
-    persistCart(updated);
-  };
+  const updateQuantity = useCallback((productId: string, quantity: number) => {
+    const pIdStr = String(productId);
+    setCart((prevCart) => {
+      let updated: CartItem[];
+      if (quantity <= 0) {
+        updated = prevCart.filter((item) => String(item.product.id) !== pIdStr);
+      } else {
+        const idx = prevCart.findIndex((item) => String(item.product.id) === pIdStr);
+        if (idx > -1) {
+          updated = [...prevCart];
+          updated[idx] = { ...updated[idx], quantity };
+        } else {
+          updated = prevCart;
+        }
+      }
+      scheduleStoragePersist(updated);
+      return updated;
+    });
+  }, [scheduleStoragePersist]);
 
-  const updateQuantity = (productId: string, quantity: number) => {
-    if (quantity <= 0) {
-      removeFromCart(productId);
-      return;
-    }
-    const updated = cart.map((item) =>
-      item.product.id === productId ? { ...item, quantity } : item
-    );
-    persistCart(updated);
-  };
-
-  const clearCart = () => {
+  const clearCart = useCallback(() => {
     setCart([]);
     setAppliedCoupon(null);
-    Promise.all([
-      setItem('grabit_cart', []),
-      setItem('grabit_applied_coupon', null),
-    ]).catch((e) => console.warn('Cart clearing storage error:', e));
-  };
+    setItem('grabit_cart', []);
+    setItem('grabit_applied_coupon', null);
+  }, []);
 
-  const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const itemTotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-  const mrpTotal = cart.reduce((sum, item) => sum + (item.product.originalPrice || item.product.price) * item.quantity, 0);
-  const discount = Math.max(0, mrpTotal - itemTotal);
-
-  const deliveryFee = itemTotal >= 100 || itemTotal === 0 ? 0 : 30;
+  // Single-pass memoized calculation of cart totals
+  const { totalItems, itemTotal, mrpTotal, discount, deliveryFee } = useMemo(() => {
+    let tItems = 0;
+    let iTotal = 0;
+    let mTotal = 0;
+    for (let i = 0; i < cart.length; i++) {
+      const item = cart[i];
+      const q = item.quantity;
+      tItems += q;
+      iTotal += item.product.price * q;
+      const pOrig = (item.product as any).originalPrice || (item.product as any).original_price || (item.product as any).mrp || item.product.price;
+      mTotal += pOrig * q;
+    }
+    const disc = Math.max(0, mTotal - iTotal);
+    const dFee = iTotal >= 500 || iTotal === 0 ? 0 : 30;
+    return {
+      totalItems: tItems,
+      itemTotal: iTotal,
+      mrpTotal: mTotal,
+      discount: disc,
+      deliveryFee: dFee,
+    };
+  }, [cart]);
 
   // Auto invalidate coupon if conditions no longer met
   useEffect(() => {
     if (!appliedCoupon) return;
-    if (appliedCoupon.discountType === 'free_delivery' && (itemTotal >= 100 || deliveryFee === 0)) {
+    if (appliedCoupon.discountType === 'free_delivery' && (itemTotal >= 500 || deliveryFee === 0)) {
       setAppliedCoupon(null);
       setItem('grabit_applied_coupon', null);
     } else if (appliedCoupon.minOrder && itemTotal < appliedCoupon.minOrder && cart.length > 0) {
@@ -162,18 +200,22 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [appliedCoupon, itemTotal, deliveryFee, cart.length]);
 
-  let couponDiscount = 0;
-  if (appliedCoupon && itemTotal >= (appliedCoupon.minOrder || 0)) {
-    if (appliedCoupon.discountType === 'fixed') {
-      couponDiscount = Math.min(appliedCoupon.discountValue, itemTotal);
-    } else if (appliedCoupon.discountType === 'free_delivery') {
-      couponDiscount = deliveryFee;
+  const { couponDiscount, toPay } = useMemo(() => {
+    let cDiscount = 0;
+    if (appliedCoupon && itemTotal >= (appliedCoupon.minOrder || 0)) {
+      if (appliedCoupon.discountType === 'fixed') {
+        cDiscount = Math.min(appliedCoupon.discountValue, itemTotal);
+      } else if (appliedCoupon.discountType === 'free_delivery') {
+        cDiscount = deliveryFee;
+      }
     }
-  }
+    return {
+      couponDiscount: cDiscount,
+      toPay: Math.max(0, itemTotal + deliveryFee - cDiscount),
+    };
+  }, [appliedCoupon, itemTotal, deliveryFee]);
 
-  const toPay = Math.max(0, itemTotal + deliveryFee - couponDiscount);
-
-  const applyCoupon = (codeToApply: string) => {
+  const applyCoupon = useCallback((codeToApply: string) => {
     if (!codeToApply || !codeToApply.trim()) {
       return { success: false, message: 'Please enter a valid coupon code' };
     }
@@ -200,7 +242,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, message: `Add ₹${diff} more items to apply code ${cleanCode}` };
     }
 
-    if (coupon.discountType === 'free_delivery' && (deliveryFee === 0 || itemTotal >= 100)) {
+    if (coupon.discountType === 'free_delivery' && (deliveryFee === 0 || itemTotal >= 500)) {
       return {
         success: false,
         message: 'Your order already qualifies for FREE delivery! No coupon needed.'
@@ -210,37 +252,53 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAppliedCoupon(coupon);
     setItem('grabit_applied_coupon', coupon);
     return { success: true, message: `Coupon "${coupon.code}" applied successfully!` };
-  };
+  }, [itemTotal, deliveryFee]);
 
-  const removeCoupon = () => {
+  const removeCoupon = useCallback(() => {
     setAppliedCoupon(null);
     setItem('grabit_applied_coupon', null);
-  };
+  }, []);
+
+  const contextValue = useMemo(() => ({
+    cart,
+    items: cart,
+    addToCart,
+    removeFromCart,
+    updateQuantity,
+    clearCart,
+    totalItems,
+    totalAmount: itemTotal,
+    itemTotal,
+    mrpTotal,
+    discount,
+    deliveryFee,
+    toPay,
+    appliedCoupon,
+    couponDiscount,
+    discountAmount: couponDiscount,
+    applyCoupon,
+    removeCoupon,
+    AVAILABLE_COUPONS,
+  }), [
+    cart,
+    addToCart,
+    removeFromCart,
+    updateQuantity,
+    clearCart,
+    totalItems,
+    itemTotal,
+    mrpTotal,
+    discount,
+    deliveryFee,
+    toPay,
+    appliedCoupon,
+    couponDiscount,
+    applyCoupon,
+    removeCoupon,
+  ]);
 
   return (
-    <CartContext.Provider
-      value={{
-        cart,
-        items: cart,
-        addToCart,
-        removeFromCart,
-        updateQuantity,
-        clearCart,
-        totalItems,
-        totalAmount: itemTotal,
-        itemTotal,
-        mrpTotal,
-        discount,
-        deliveryFee,
-        toPay,
-        appliedCoupon,
-        couponDiscount,
-        discountAmount: couponDiscount,
-        applyCoupon,
-        removeCoupon,
-        AVAILABLE_COUPONS,
-      }}
-    >
+    <CartContext.Provider value={contextValue}>
       {children}
     </CartContext.Provider>
   );

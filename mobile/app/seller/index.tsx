@@ -71,9 +71,42 @@ export default function SellerDashboardScreen() {
       if (Array.isArray(catsRes) && catsRes.length > 0) {
         setLiveCategories(catsRes);
       }
-      if (Array.isArray(ordersRes) && ordersRes.length > 0) {
-        setLiveOrders(ordersRes);
+      const cached = (await getItem<Order[]>('grabit_seller_orders').catch(() => [])) || [];
+      const combinedOrders = Array.isArray(ordersRes) ? [...ordersRes] : [];
+      const cachedMap = new Map<string, any>();
+      if (Array.isArray(cached)) {
+        cached.forEach((co) => {
+          if (co && (co.id || co.rawId)) {
+            const k1 = String(co.id || '');
+            const k2 = String(co.rawId || '');
+            if (k1) cachedMap.set(k1, co);
+            if (k2) cachedMap.set(k2, co);
+          }
+        });
       }
+
+      combinedOrders.forEach((ao: any) => {
+        const matchingCached = cachedMap.get(ao.id) || cachedMap.get(ao.rawId);
+        const hasDummyItems = !ao.items || ao.items.length === 0 || ao.items.every((it: any) => it.name === 'Fresh Grocery & Essentials Pack' || it.name === 'Ordered Product');
+        if (matchingCached && matchingCached.items && matchingCached.items.length > 0 && hasDummyItems) {
+          const validRealItems = matchingCached.items.filter((it: any) => it.name !== 'Fresh Grocery & Essentials Pack');
+          if (validRealItems.length > 0) {
+            ao.items = validRealItems;
+          }
+        }
+      });
+
+      const seen = new Set(combinedOrders.map((o: any) => o.id || o.rawId));
+      if (Array.isArray(cached)) {
+        for (const co of cached) {
+          const cid = co.id || co.rawId;
+          if (cid && !seen.has(cid)) {
+            seen.add(cid);
+            combinedOrders.push(co);
+          }
+        }
+      }
+      setLiveOrders(combinedOrders);
       if (Array.isArray(ridersRes) && ridersRes.length > 0) {
         const onlineCount = ridersRes.filter((r: any) => r.is_online || r.status === 'AVAILABLE').length;
         setActiveRidersCount(onlineCount || ridersRes.length);

@@ -17,7 +17,8 @@ import { useToast } from '../../context/ToastContext';
 import { post } from '../../services/api';
 import { DeliveryLocationMapPicker } from '../../components/DeliveryLocationMapPicker';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
-import { getCloudinaryUrl } from '../../services/cloudinary';
+import { getCloudinaryUrl, getValidImage, optimizeImageUrl, DEFAULT_FALLBACK_IMAGE } from '../../services/cloudinary';
+import { formatDisplayOrderId } from '../../utils/orderUtils';
 import { getItem, setItem } from '../../services/storage';
 import { addUserNotification } from '../../utils/userNotifications';
 import {
@@ -52,29 +53,10 @@ const PAYMENT_METHODS = [
   { id: 'cod', icon: Banknote, label: 'Cash on Delivery', sub: 'Pay in cash when your order arrives', logos: [] },
 ];
 
-const LOCAL_PRODUCT_IMAGES: Record<string, any> = {
-  'coca-cola-real.jpg': require('../../assets/coca-cola-real.jpg'),
-  'aashirvaad-atta-real.jpg': require('../../assets/aashirvaad-atta-real.jpg'),
-  'atta-real.jpg': require('../../assets/aashirvaad-atta-real.jpg'),
-  'amul-butter-real.jpg': require('../../assets/amul-butter-real.jpg'),
-  'butter-real.jpg': require('../../assets/amul-butter-real.jpg'),
-  'combo-munchies.jpg': require('../../assets/combo-munchies.jpg'),
-  'cadbury-silk-real.jpg': require('../../assets/cadbury-silk-real.jpg'),
-  'dettol-handwash-real.jpg': require('../../assets/dettol-handwash-real.jpg'),
-  'dettol-real.jpg': require('../../assets/dettol-handwash-real.jpg'),
-  'fortune-oil-real.jpg': require('../../assets/fortune-oil-real.jpg'),
-  'apples-real.jpg': require('../../assets/apples-real.jpg'),
-};
-
 const getProductImageSource = (imageStr?: string) => {
-  if (!imageStr) return { uri: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=500' };
-
-  const filename = imageStr.split('/').pop()?.split('?')[0] || '';
-  if (LOCAL_PRODUCT_IMAGES[imageStr]) return LOCAL_PRODUCT_IMAGES[imageStr];
-  if (LOCAL_PRODUCT_IMAGES[filename]) return LOCAL_PRODUCT_IMAGES[filename];
-
-  if (imageStr.startsWith('http')) return { uri: imageStr };
-  return { uri: getCloudinaryUrl(imageStr, 'thumbnail') };
+  if (!imageStr) return { uri: DEFAULT_FALLBACK_IMAGE };
+  const clean = getValidImage(imageStr);
+  return { uri: optimizeImageUrl(clean, 300) };
 };
 
 export default function CheckoutPage() {
@@ -100,6 +82,16 @@ export default function CheckoutPage() {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [orderPlaced, setOrderPlaced] = useState<boolean>(false);
   const [placedOrderId, setPlacedOrderId] = useState<string>('');
+
+  // Auto-redirect to My Orders 1.5s after order is placed
+  useEffect(() => {
+    if (!orderPlaced) return;
+    const timer = setTimeout(() => {
+      router.replace('/customer/orders' as any);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [orderPlaced, router]);
+
   const [showCouponBackWarningModal, setShowCouponBackWarningModal] = useState<boolean>(false);
 
   // ── LOCATION & ADDRESS STATE ──
@@ -121,7 +113,7 @@ export default function CheckoutPage() {
     return {
       title: 'Home',
       name: currentName,
-      phone: currentPhone || '9999900004',
+      phone: currentPhone || '',
       address: full,
       tag: 'SELECTED LOCATION',
       time: '15-25 min delivery',
@@ -163,7 +155,7 @@ export default function CheckoutPage() {
     const formatted = {
       title: addr.title || addr.tag || 'Delivery Location',
       name: currentName,
-      phone: currentPhone || '9999900004',
+      phone: currentPhone || '',
       address: fullAddressText,
       tag: 'SELECTED LOCATION',
       time: addr.time || '15-25 min delivery',
@@ -203,7 +195,7 @@ export default function CheckoutPage() {
     const formatted = {
       title: editForm.title.trim() || 'Home',
       name: currentName,
-      phone: currentPhone || '9999900004',
+      phone: currentPhone || '',
       address: fullAddrStr,
       tag: 'EDITED LOCATION',
       time: '15-25 min delivery',
@@ -231,7 +223,7 @@ export default function CheckoutPage() {
     const formatted = {
       title: 'Custom Location',
       name: currentName,
-      phone: currentPhone || '9999900004',
+      phone: currentPhone || '',
       address: customText,
       tag: 'DIRECT LOCATION',
       time: '15-25 min delivery',
@@ -261,7 +253,7 @@ export default function CheckoutPage() {
       const formatted = {
         title: 'Current Location',
         name: currentName,
-        phone: currentPhone || '9999900004',
+        phone: currentPhone || '',
         address: gpsAddrText,
         tag: 'GPS LOCATION',
         time: '15-25 min delivery',
@@ -345,7 +337,9 @@ export default function CheckoutPage() {
 
     // 2. Order Payload Preparation
     const orderNumber = `GB-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const rawId = `ord-${Date.now()}`;
+    const rawId = (typeof crypto !== 'undefined' && (crypto as any).randomUUID) 
+      ? (crypto as any).randomUUID() 
+      : `${Date.now().toString(16).padStart(8, '0')}-0000-4000-8000-${Math.floor(Math.random() * 1e12).toString(16).padStart(12, '0')}`;
     const orderItems = cart.map((item) => ({
       id: item.product.id,
       product_id: item.product.id,
@@ -358,17 +352,28 @@ export default function CheckoutPage() {
     }));
 
     const custName = selectedAddress.name || currentName || 'Customer';
-    const rawPhoneDigits = (selectedAddress.phone || currentPhone || '9999900004').replace(/\D/g, '');
-    const validPhoneDigits = rawPhoneDigits.length >= 10 ? rawPhoneDigits.slice(-10) : '9999900004';
+    // Use the signed-in user's phone for storage key (must match orders page lookup)
+    // selectedAddress may not have a phone field — fall back to user.phone
+    const addrPhone = (selectedAddress.phone || '').replace(/\D/g, '');
+    const validPhoneDigits = addrPhone.length >= 10
+      ? addrPhone.slice(-10)
+      : phoneDigits.length >= 10
+        ? phoneDigits.slice(-10)
+        : phoneDigits || '';
+    // Storage key always keyed to the signed-in user's phone
+    const userStoragePhone = phoneDigits.length >= 10 ? phoneDigits.slice(-10) : phoneDigits;
     const fullAddrStr = selectedAddress.address;
     const targetStoreId = 'b5c9ff6b-1f64-405f-a25d-54dc6ea77bbb';
     const targetLat = currentAddress.latitude || 12.9716;
     const targetLng = currentAddress.longitude || 77.5946;
 
     const newOrder = {
-      id: orderNumber,
-      orderNumber,
-      rawId,
+      id: rawId,
+      rawId: rawId,
+      display_id: orderNumber,
+      displayId: orderNumber,
+      order_number: orderNumber,
+      orderNumber: orderNumber,
       store_id: targetStoreId,
       store_name: 'GrabIt Supermarket',
       customer_name: custName,
@@ -392,58 +397,46 @@ export default function CheckoutPage() {
     };
 
     let finalOrder = { ...newOrder };
+    const formattedId = formatDisplayOrderId(finalOrder);
+    finalOrder.displayId = formattedId;
+    finalOrder.display_id = formattedId;
+    finalOrder.orderNumber = formattedId;
+    finalOrder.order_number = formattedId;
+    const orderNum = formattedId;
 
-    // 3. Create Order API Call (Server-Authoritative)
-    console.time('CreateOrder API');
-    try {
-      const apiRes = await post('/orders/', {
-        store_id: targetStoreId,
-        delivery_address: fullAddrStr,
-        items: orderItems,
-        total_amount: toPay,
-        customer_name: newOrder.customer_name,
-        customer_phone: newOrder.customer_phone,
-        payment_method: newOrder.payment_method,
-        latitude: targetLat,
-        longitude: targetLng,
-        status: 'placed',
-      });
-
-      console.timeEnd('CreateOrder API');
-
-      if (apiRes && (apiRes.id || apiRes.rawId)) {
-        finalOrder.id = apiRes.id || apiRes.rawId;
-        finalOrder.rawId = apiRes.id || apiRes.rawId;
-        finalOrder.orderNumber = apiRes.id || apiRes.rawId;
+    // 3. Instant Local Storage & Notification Save (Zero Lag)
+    const saveOrderToKey = async (key: string) => {
+      if (!key) return;
+      try {
+        const existingUserOrders = (await getItem<any[]>(key).catch(() => [])) || [];
+        const filtered = existingUserOrders.filter(
+          (o) =>
+            o &&
+            o.id !== rawId &&
+            o.rawId !== rawId &&
+            o.id !== orderNum &&
+            o.displayId !== orderNum &&
+            o.orderNumber !== orderNum &&
+            o.display_id !== orderNum &&
+            o.order_number !== orderNum
+        );
+        await setItem(key, [finalOrder, ...filtered]);
+      } catch (e) {
+        console.warn(`Failed to save order to ${key}:`, e);
       }
-    } catch (err) {
-      console.timeEnd('CreateOrder API');
-      console.warn('[Checkout] Backend order API fallback to local order:', err);
+    };
+
+    const keysToSave = new Set<string>();
+    if (userStoragePhone) keysToSave.add(`grabit_orders_${userStoragePhone}`);
+    if (validPhoneDigits) keysToSave.add(`grabit_orders_${validPhoneDigits}`);
+    keysToSave.add('grabit_seller_orders');
+    if (keysToSave.size === 1) {
+      keysToSave.add('grabit_orders_guest');
     }
 
-    // 4. Post-Order Parallel Storage & Cart Clearing (Non-blocking)
-    console.time('PostOrder');
-
-    // Immediate synchronous UI state transition to "Order Placed Successfully"
-    setPlacedOrderId(finalOrder.id);
-    setOrderPlaced(true);
-    clearCart();
-
-    // Run persistent storage updates in parallel asynchronously in background
-    const storageKey = `grabit_orders_${validPhoneDigits}`;
-    const cleanDisplayId = String(finalOrder.id || finalOrder.orderNumber || '').replace(/^GB-?/i, '');
-    const formattedId = cleanDisplayId.length > 5 ? cleanDisplayId.slice(0, 8).toUpperCase() : cleanDisplayId.toUpperCase();
-    const orderNum = `ORD-${formattedId}`;
-
-    Promise.all([
-      getItem<any[]>(storageKey).then((existingUserOrders) => {
-        const filtered = (existingUserOrders || []).filter((o) => o.id !== finalOrder.id && o.rawId !== finalOrder.rawId);
-        return setItem(storageKey, [finalOrder, ...filtered]);
-      }),
-      getItem<any[]>('grabit_orders').then((globalExisting) => {
-        const filtered = (globalExisting || []).filter((o) => o.id !== finalOrder.id && o.rawId !== finalOrder.rawId);
-        return setItem('grabit_orders', [finalOrder, ...filtered]);
-      }),
+    // Save locally immediately so order is guaranteed in state
+    await Promise.all([
+      ...Array.from(keysToSave).map((k) => saveOrderToKey(k)),
       addUserNotification({
         title: 'Order Placed',
         message: `Order #${orderNum} received. Store is preparing your items.`,
@@ -458,13 +451,81 @@ export default function CheckoutPage() {
       }),
     ]).catch((e) => console.warn('Storage sync error:', e));
 
-    console.timeEnd('PostOrder');
-    console.timeEnd('PlaceOrder total');
+    // 4. ⚠️ CRITICAL: Send to backend FIRST before showing the success screen.
+    //    The auto-redirect useEffect fires 1.5s after setOrderPlaced(true).
+    //    If setOrderPlaced fires before this fetch completes, the component unmounts,
+    //    the AbortController kills the in-flight fetch, and the seller NEVER gets the order.
+    try {
+      const apiCallPromise = post('/orders/', {
+        id: rawId,
+        rawId: rawId,
+        display_id: orderNum,
+        displayId: orderNum,
+        order_number: orderNum,
+        orderNumber: orderNum,
+        store_id: targetStoreId,
+        delivery_address: fullAddrStr,
+        items: orderItems,
+        total_amount: toPay,
+        customer_name: newOrder.customer_name,
+        customer_phone: newOrder.customer_phone,
+        payment_method: newOrder.payment_method,
+        latitude: targetLat,
+        longitude: targetLng,
+        status: 'placed',
+      });
 
-    // Smooth redirect to orders page after 2.5s (or user can tap interactive buttons immediately)
-    setTimeout(() => {
-      router.replace('/customer/orders' as any);
-    }, 2500);
+      // 6s timeout — if backend takes longer, proceed anyway (order is already saved locally)
+      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000));
+      const apiRes: any = await Promise.race([apiCallPromise, timeoutPromise]);
+
+      if (apiRes && (apiRes.id || apiRes.rawId)) {
+        const serverId = apiRes.id || apiRes.rawId;
+        const serverDispId = apiRes.display_id || apiRes.order_number || apiRes.displayId || apiRes.orderNumber || orderNum;
+
+        finalOrder.id = serverId;
+        finalOrder.rawId = serverId;
+        finalOrder.displayId = serverDispId;
+        finalOrder.display_id = serverDispId;
+        finalOrder.orderNumber = serverDispId;
+        finalOrder.order_number = serverDispId;
+
+        // Clean out old local draft entry so AsyncStorage never contains duplicate order cards
+        for (const k of Array.from(keysToSave)) {
+          try {
+            const existing = (await getItem<any[]>(k).catch(() => [])) || [];
+            const cleaned = existing.filter(
+              (o) =>
+                o &&
+                o.id !== serverId &&
+                o.rawId !== serverId &&
+                o.id !== rawId &&
+                o.rawId !== rawId &&
+                o.id !== orderNum &&
+                o.displayId !== orderNum &&
+                o.orderNumber !== orderNum &&
+                o.display_id !== orderNum &&
+                o.order_number !== orderNum &&
+                o.displayId !== serverDispId &&
+                o.orderNumber !== serverDispId &&
+                o.display_id !== serverDispId &&
+                o.order_number !== serverDispId
+            );
+            await setItem(k, [finalOrder, ...cleaned]);
+          } catch {}
+        }
+      }
+    } catch (err) {
+      // Backend unreachable — order is saved locally, user can still see it in My Orders
+      if (__DEV__) console.log('[Checkout] Backend sync failed, order saved locally:', (err as any)?.message || err);
+    }
+
+    // 5. Only NOW show the success screen — backend sync is done, redirect is safe
+    clearCart();
+    setPlacedOrderId(formatDisplayOrderId(finalOrder));
+    setOrderPlaced(true);
+    setIsSubmitting(false);
+    isPlacingRef.current = false;
   };
 
   // ── ORDER CONFIRMED SUCCESS VIEW ──
@@ -483,7 +544,7 @@ export default function CheckoutPage() {
 
           {/* Order ID Tag */}
           <View style={styles.successOrderIdBadge}>
-            <Text style={styles.successOrderIdText}>ORDER #{placedOrderId || 'ORD-982145'}</Text>
+            <Text style={styles.successOrderIdText}>ORDER #{formatDisplayOrderId(placedOrderId)}</Text>
           </View>
 
           {/* ETA Card */}
@@ -535,7 +596,7 @@ export default function CheckoutPage() {
 
           <View style={styles.redirectingBox}>
             <ActivityIndicator size="small" color="#10B981" style={{ marginRight: 8 }} />
-            <Text style={styles.redirectingText}>Redirecting to My Orders...</Text>
+            <Text style={styles.redirectingText}>Taking you to My Orders in a moment...</Text>
           </View>
         </View>
       </View>
@@ -596,7 +657,7 @@ export default function CheckoutPage() {
 
       <View style={styles.billRow}>
         <Text style={styles.billLabel}>Item Total ({totalItems} items)</Text>
-        <Text style={styles.billVal}>₹{mrpTotal || itemTotal}</Text>
+        <Text style={styles.billVal}>₹{mrpTotal > itemTotal ? mrpTotal : itemTotal}</Text>
       </View>
 
       {discount > 0 ? (

@@ -45,6 +45,8 @@ interface HistoryRecord {
 
 const RIDER_HISTORY_DATA: HistoryRecord[] = [];
 
+import { formatDisplayOrderId } from '../../utils/orderUtils';
+
 // Utility to map backend order to HistoryRecord
 function mapOrderToHistory(o: any, idx: number): HistoryRecord {
   const total = Number(o.total_amount || o.total || o.totalAmount || 0);
@@ -57,7 +59,7 @@ function mapOrderToHistory(o: any, idx: number): HistoryRecord {
   const items = Array.isArray(o.items || o.order_items) ? (o.items || o.order_items) : [];
   return {
     id: String(idx + 1),
-    orderId: o.orderNumber || o.id || `ORD-${idx + 1}`,
+    orderId: formatDisplayOrderId(o),
     time: timeLabel,
     date: dateLabel,
     store: o.store_name || 'Grabit Dark Store',

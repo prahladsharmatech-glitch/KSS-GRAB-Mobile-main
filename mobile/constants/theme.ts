@@ -12,9 +12,13 @@ export const COLORS = {
   card: '#FFFFFF',
   border: '#E2E8F0',        // Light Border (matching web --border-light)
   danger: '#EF4444',
+  dangerLight: '#FEE2E2',
   success: '#10B981',
+  successLight: '#D1FAE5',
   warning: '#F59E0B',
+  warningLight: '#FEF3C7',
   info: '#3B82F6',
+  infoLight: '#DBEAFE',
   darkHeader: '#0F172A',
   darkCard: '#1E293B',
 };

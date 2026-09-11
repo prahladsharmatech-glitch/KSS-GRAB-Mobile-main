@@ -8,20 +8,6 @@ import { Heart, Plus, Minus, Star } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { getCloudinaryUrl, DEFAULT_FALLBACK_IMAGE, optimizeImageUrl } from '../services/cloudinary';
 
-const LOCAL_PRODUCT_IMAGES: Record<string, any> = {
-  'coca-cola-real.jpg': require('../assets/coca-cola-real.jpg'),
-  'aashirvaad-atta-real.jpg': require('../assets/aashirvaad-atta-real.jpg'),
-  'atta-real.jpg': require('../assets/aashirvaad-atta-real.jpg'),
-  'amul-butter-real.jpg': require('../assets/amul-butter-real.jpg'),
-  'butter-real.jpg': require('../assets/amul-butter-real.jpg'),
-  'combo-munchies.jpg': require('../assets/combo-munchies.jpg'),
-  'cadbury-silk-real.jpg': require('../assets/cadbury-silk-real.jpg'),
-  'dettol-handwash-real.jpg': require('../assets/dettol-handwash-real.jpg'),
-  'dettol-real.jpg': require('../assets/dettol-handwash-real.jpg'),
-  'fortune-oil-real.jpg': require('../assets/fortune-oil-real.jpg'),
-  'apples-real.jpg': require('../assets/apples-real.jpg'),
-};
-
 const getProductImageSource = (imageStr?: string) => {
   if (!imageStr || typeof imageStr !== 'string') {
     return { uri: DEFAULT_FALLBACK_IMAGE };
@@ -31,10 +17,6 @@ const getProductImageSource = (imageStr?: string) => {
   if (!clean || clean === 'null' || clean === 'undefined' || clean.endsWith('/null') || clean.endsWith('/undefined')) {
     return { uri: DEFAULT_FALLBACK_IMAGE };
   }
-
-  const filename = clean.split('/').pop()?.split('?')[0] || '';
-  if (LOCAL_PRODUCT_IMAGES[clean]) return LOCAL_PRODUCT_IMAGES[clean];
-  if (LOCAL_PRODUCT_IMAGES[filename]) return LOCAL_PRODUCT_IMAGES[filename];
 
   return { uri: optimizeImageUrl(clean, 300) };
 };
@@ -51,20 +33,72 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({ product, width }) =>
   const [imageError, setImageError] = React.useState(false);
 
   const cartItem = cart.find((i) => i.product.id === product.id);
-  const qty = cartItem ? cartItem.quantity : 0;
-  const isWishlisted = isInWishlist(product.id);
-  const isOutOfStock = product.inStock === false;
+  const contextQty = cartItem ? cartItem.quantity : 0;
+  const [localQty, setLocalQty] = React.useState(contextQty);
 
+  React.useEffect(() => {
+    setLocalQty(contextQty);
+  }, [contextQty]);
+
+  const contextWishlisted = isInWishlist(product.id);
+  const [localWishlisted, setLocalWishlisted] = React.useState(contextWishlisted);
+
+  React.useEffect(() => {
+    setLocalWishlisted(contextWishlisted);
+  }, [contextWishlisted]);
+
+  const isOutOfStock = product.inStock === false;
   const rawImg = product.image || (product as any).image_url;
-  const imageSource = imageError
-    ? { uri: DEFAULT_FALLBACK_IMAGE }
-    : getProductImageSource(rawImg);
+
+  const imageSource = React.useMemo(() => {
+    if (imageError) return { uri: DEFAULT_FALLBACK_IMAGE };
+    return getProductImageSource(rawImg);
+  }, [imageError, rawImg]);
+
+  const handleAdd = React.useCallback(
+    (e: any) => {
+      e.stopPropagation();
+      setLocalQty(1);
+      addToCart(product);
+    },
+    [addToCart, product]
+  );
+
+  const handleIncrement = React.useCallback(
+    (e: any) => {
+      e.stopPropagation();
+      const next = localQty + 1;
+      setLocalQty(next);
+      updateQuantity(product.id, next);
+    },
+    [localQty, product.id, updateQuantity]
+  );
+
+  const handleDecrement = React.useCallback(
+    (e: any) => {
+      e.stopPropagation();
+      const next = Math.max(0, localQty - 1);
+      setLocalQty(next);
+      updateQuantity(product.id, next);
+    },
+    [localQty, product.id, updateQuantity]
+  );
+
+  const handleToggleWishlist = React.useCallback(
+    (e: any) => {
+      e.stopPropagation();
+      setLocalWishlisted((prev) => !prev);
+      toggleWishlist(product);
+    },
+    [product, toggleWishlist]
+  );
 
   return (
     <Pressable
-      style={[
+      style={({ pressed }) => [
         styles.card,
         width ? { width: width as any, marginRight: typeof width === 'number' ? 12 : 0 } : null,
+        pressed && { opacity: 0.94, transform: [{ scale: 0.985 }] },
       ]}
       onPress={() => router.push(`/customer/product/${product.id}` as any)}
     >
@@ -88,16 +122,16 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({ product, width }) =>
 
       {/* Top Right Wishlist Heart */}
       <Pressable
-        style={styles.wishlistBtn}
-        onPress={(e) => {
-          e.stopPropagation();
-          toggleWishlist(product);
-        }}
+        style={({ pressed }) => [
+          styles.wishlistBtn,
+          pressed && { opacity: 0.7, transform: [{ scale: 0.9 }] },
+        ]}
+        onPress={handleToggleWishlist}
       >
         <Heart
           size={14}
-          color={isWishlisted ? '#FF3B30' : '#94A3B8'}
-          fill={isWishlisted ? '#FF3B30' : 'transparent'}
+          color={localWishlisted ? '#FF3B30' : '#94A3B8'}
+          fill={localWishlisted ? '#FF3B30' : 'transparent'}
         />
       </Pressable>
 
@@ -142,36 +176,36 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({ product, width }) =>
             <View style={styles.disabledAddBtn}>
               <Text style={styles.disabledAddBtnText}>Out of Stock</Text>
             </View>
-          ) : qty === 0 ? (
+          ) : localQty === 0 ? (
             <Pressable
-              style={styles.addBtn}
-              onPress={(e) => {
-                e.stopPropagation();
-                addToCart(product);
-              }}
+              style={({ pressed }) => [
+                styles.addBtn,
+                pressed && { opacity: 0.75, transform: [{ scale: 0.94 }] },
+              ]}
+              onPress={handleAdd}
             >
               <Text style={styles.addBtnText}>Add to Cart</Text>
             </Pressable>
           ) : (
             <View style={styles.qtyStepper}>
               <Pressable
-                style={styles.stepperBtn}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  updateQuantity(product.id, qty - 1);
-                }}
+                style={({ pressed }) => [
+                  styles.stepperBtn,
+                  pressed && { opacity: 0.6, transform: [{ scale: 0.88 }] },
+                ]}
+                onPress={handleDecrement}
               >
                 <Minus size={12} color="#FFFFFF" />
               </Pressable>
 
-              <Text style={styles.qtyText}>{qty}</Text>
+              <Text style={styles.qtyText}>{localQty}</Text>
 
               <Pressable
-                style={styles.stepperBtn}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  updateQuantity(product.id, qty + 1);
-                }}
+                style={({ pressed }) => [
+                  styles.stepperBtn,
+                  pressed && { opacity: 0.6, transform: [{ scale: 0.88 }] },
+                ]}
+                onPress={handleIncrement}
               >
                 <Plus size={12} color="#FFFFFF" />
               </Pressable>

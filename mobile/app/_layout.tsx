@@ -51,15 +51,7 @@ export default function RootLayout() {
                       <Stack.Screen name="seller/orders" />
                       <Stack.Screen name="seller/categories" />
                       <Stack.Screen name="seller/profile" />
-                      <Stack.Screen name="rider/index" />
-                      <Stack.Screen name="rider/active" />
-                      <Stack.Screen name="rider/history" />
-                      <Stack.Screen name="rider/attendance" />
-                      <Stack.Screen name="rider/performance" />
-                      <Stack.Screen name="rider/notifications" />
-                      <Stack.Screen name="rider/support" />
-                      <Stack.Screen name="rider/settings" />
-                      <Stack.Screen name="rider/profile" />
+                      <Stack.Screen name="rider" />
                       <Stack.Screen name="admin/index" />
                       <Stack.Screen name="admin/users" />
                       <Stack.Screen name="admin/orders" />

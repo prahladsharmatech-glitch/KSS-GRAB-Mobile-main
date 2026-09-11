@@ -31,14 +31,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const restoreSession = async () => {
     try {
+      const savedCustomer = await getItem<UserProfile>('grabit_customer_user');
+      const savedSeller = await getItem<UserProfile>('grabit_seller_profile');
       const savedUser = await getItem<UserProfile>('grabit_user');
       const token = await getSecureItem('grabit_session');
 
-      if (savedUser) {
+      if (savedCustomer && savedCustomer.role === 'customer') {
+        setUser(savedCustomer);
+        setRole('customer');
+      } else if (savedUser) {
         setUser(savedUser);
         setRole(savedUser.role || 'customer');
+      } else if (savedSeller) {
+        setUser(savedSeller);
+        setRole('seller');
       } else if (token) {
-        const defaultUser: UserProfile = { role: 'customer', name: 'Valued Customer' };
+        const defaultUser: UserProfile = { role: 'customer', name: 'Customer User', phone: '+919360843281' };
         setUser(defaultUser);
         setRole('customer');
       }
@@ -57,6 +65,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setItem('grabit_user', userObj),
       removeItem('grabit_skipped_login'),
     ];
+    if (userObj.role === 'customer') {
+      promises.push(setItem('grabit_customer_user', userObj));
+      promises.push(setSecureItem('grabit_customer_token', token));
+    }
     if (userObj.role === 'seller' || userObj.role === 'admin') {
       promises.push(setSecureItem('grabit_seller_access', token));
       promises.push(setItem('grabit_seller_profile', userObj));
@@ -94,21 +106,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: true, needsProfile: true };
       }
 
+      const isAkashPhone = phone.includes('9360843281');
       const token = res?.access_token || 'demo-token';
-      const uProfile: UserProfile = res?.user || {
-        phone,
-        role: requestedRole,
-        name: requestedRole === 'seller' ? 'Partner Store' : requestedRole === 'delivery_agent' || requestedRole === 'rider' ? 'Delivery Partner' : requestedRole === 'admin' ? 'System Admin' : 'Customer',
+      const fetchedUser = res?.user || {};
+      const resolvedName = fetchedUser.full_name || fetchedUser.name || (isAkashPhone ? 'Akash' : (requestedRole === 'seller' ? 'Partner Store' : requestedRole === 'delivery_agent' || requestedRole === 'rider' ? 'Delivery Partner' : requestedRole === 'admin' ? 'System Admin' : 'Customer User'));
+
+      const uProfile: UserProfile = {
+        ...fetchedUser,
+        phone: fetchedUser.phone || phone,
+        role: fetchedUser.role || requestedRole,
+        name: resolvedName,
+        full_name: resolvedName,
       };
 
       await saveSession(token, uProfile);
       return { success: true, needsProfile: false, user: uProfile, token };
     } catch (err: any) {
       // Fallback demo auth
+      const isAkashPhone = phone.includes('9360843281');
+      const resolvedName = isAkashPhone ? 'Akash' : (requestedRole === 'seller' ? 'Grabit Store' : requestedRole === 'delivery_agent' || requestedRole === 'rider' ? 'Delivery Partner' : requestedRole === 'admin' ? 'Admin Controller' : 'Customer User');
       const demoUser: UserProfile = {
         phone,
         role: requestedRole,
-        name: requestedRole === 'seller' ? 'Grabit Store' : requestedRole === 'delivery_agent' || requestedRole === 'rider' ? 'Delivery Partner' : requestedRole === 'admin' ? 'Admin Controller' : 'Customer User',
+        name: resolvedName,
+        full_name: resolvedName,
       };
       const token = `demo-${requestedRole}-token`;
       await saveSession(token, demoUser);
@@ -167,6 +188,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await removeSecureItem('grabit_seller_access');
     await removeItem('grabit_user');
     await removeItem('grabit_seller_profile');
+    // NOTE: We intentionally do NOT clear order history keys on logout.
+    // Orders are phone-keyed data that should survive across login/logout cycles.
+    // The orders page re-fetches from the server using the phone number on next login.
+    await removeItem('grabit_selected_address');
     setUser(null);
     setRole('customer');
   };

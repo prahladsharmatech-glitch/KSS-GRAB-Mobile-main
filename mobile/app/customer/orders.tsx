@@ -13,17 +13,19 @@ import {
   Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { useCart } from '../../context/CartContext';
 import { useLocation } from '../../context/LocationContext';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { get, patch } from '../../services/api';
-import { getItem, setItem } from '../../services/storage';
+import { getItem, setItem, removeItem, clearAllLegacyOrderStorage, purgeLocalOrderStorage } from '../../services/storage';
 import { products } from '../../data/products';
 import { getValidImage, optimizeImageUrl, DEFAULT_FALLBACK_IMAGE } from '../../services/cloudinary';
 import { NotificationModal } from '../../components/NotificationModal';
 import { CustomerTopHeader } from '../../components/CustomerTopHeader';
-import { getRealUserNotifications } from '../../utils/userNotifications';
+import { getRealUserNotifications, clearAllNotifications } from '../../utils/userNotifications';
+import { formatDisplayOrderId } from '../../utils/orderUtils';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import {
   Zap,
@@ -32,38 +34,29 @@ import {
   ShoppingBag,
   ArrowLeft,
   Search,
-  X,
   ChevronRight,
+  Clock,
   Check,
-  AlertCircle,
+  CheckCircle,
   Truck,
+  Package,
+  XCircle,
+  AlertCircle,
+  Phone,
+  HelpCircle,
   RefreshCw,
+  X,
+  User,
+  Star,
+  Receipt,
+  FileText,
+  Trash2,
 } from 'lucide-react-native';
-
-const LOCAL_PRODUCT_IMAGES: Record<string, any> = {
-  'coca-cola-real.jpg': require('../../assets/coca-cola-real.jpg'),
-  'aashirvaad-atta-real.jpg': require('../../assets/aashirvaad-atta-real.jpg'),
-  'atta-real.jpg': require('../../assets/aashirvaad-atta-real.jpg'),
-  'amul-butter-real.jpg': require('../../assets/amul-butter-real.jpg'),
-  'butter-real.jpg': require('../../assets/amul-butter-real.jpg'),
-  'combo-munchies.jpg': require('../../assets/combo-munchies.jpg'),
-  'cadbury-silk-real.jpg': require('../../assets/cadbury-silk-real.jpg'),
-  'dettol-handwash-real.jpg': require('../../assets/dettol-handwash-real.jpg'),
-  'dettol-real.jpg': require('../../assets/dettol-handwash-real.jpg'),
-  'fortune-oil-real.jpg': require('../../assets/fortune-oil-real.jpg'),
-  'apples-real.jpg': require('../../assets/apples-real.jpg'),
-};
 
 const resolveProductImage = (imageStr?: string) => {
   if (!imageStr || typeof imageStr !== 'string') return { uri: DEFAULT_FALLBACK_IMAGE };
   const clean = getValidImage(imageStr);
-  if (clean === DEFAULT_FALLBACK_IMAGE) return { uri: DEFAULT_FALLBACK_IMAGE };
-
-  const filename = clean.split('/').pop()?.split('?')[0] || '';
-  if (LOCAL_PRODUCT_IMAGES[clean]) return LOCAL_PRODUCT_IMAGES[clean];
-  if (LOCAL_PRODUCT_IMAGES[filename]) return LOCAL_PRODUCT_IMAGES[filename];
-
-  return { uri: optimizeImageUrl(clean, 200) };
+  return { uri: optimizeImageUrl(clean, 300) };
 };
 
 const canCancelOrder = (statusStr?: string) => {
@@ -135,20 +128,70 @@ export default function OrdersPage() {
     });
   }, [user?.phone, isNotifModalOpen]);
 
+  // Only compute phone once the real authenticated user is available.
+  // Never fall back to the demo test number — return empty string if not ready.
   const phoneDigits = useMemo(() => {
     const raw = (user?.phone || '').replace(/\D/g, '');
-    return raw.length >= 10 ? raw.slice(-10) : raw || '9999900004';
+    return raw.length >= 10 ? raw.slice(-10) : '';
   }, [user?.phone]);
+
+  // Pre-load from local storage immediately on mount so new orders show right away
+  useEffect(() => {
+    // Don't run preload if we don't have a phone yet (e.g. just after login before user resolves)
+    // Prevents wiping the order list during the brief window before phoneDigits is available
+    if (!phoneDigits) return;
+
+    const preloadFromStorage = async () => {
+      try {
+        const keysToRead = phoneDigits ? [`grabit_orders_${phoneDigits}`] : ['grabit_orders_guest'];
+
+        const results = await Promise.all(
+          keysToRead.map((k) => getItem<any[]>(k).catch(() => []))
+        );
+
+        const uniqueMap = new Map<string, any>();
+        results.forEach((cached) => {
+          if (Array.isArray(cached) && cached.length > 0) {
+            cached.forEach((o) => {
+              if (o && (o.id || o.rawId)) {
+                const oPhone = String(o.customer_phone || o.phone || '').replace(/\D/g, '');
+                if (oPhone && phoneDigits && oPhone.length >= 10 && phoneDigits.length >= 10 && oPhone.slice(-10) !== phoneDigits.slice(-10)) {
+                  return; // Belongs to a different user account! Do not leak!
+                }
+                const formatted = formatOrder(o);
+                uniqueMap.set(String(formatted.rawId || formatted.id), formatted);
+              }
+            });
+          }
+        });
+
+        const list = Array.from(uniqueMap.values());
+        if (list.length > 0) {
+          list.sort((a, b) => {
+            const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+            const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+            return timeB - timeA;
+          });
+          setOrdersList(list);
+          setIsLoading(false);
+        }
+        // NOTE: Do NOT call setOrdersList([]) here when nothing found.
+        // If storage is empty, let loadOrders() handle it after the API responds.
+      } catch {}
+    };
+    preloadFromStorage();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phoneDigits]);
 
   const formatOrder = useCallback((o: any) => {
     let normStatus = 'placed';
     let step = 0;
     const st = String(o.status || '').toLowerCase();
-    if (st === 'delivered') { normStatus = 'delivered'; step = 4; }
-    else if (st === 'out_for_delivery' || st === 'out-for-delivery' || st === 'picked_up') { normStatus = 'out_for_delivery'; step = 3; }
-    else if (st === 'ready_for_pickup' || st === 'ready') { normStatus = 'ready'; step = 2; }
-    else if (st === 'preparing' || st === 'confirmed') { normStatus = 'preparing'; step = 1; }
-    else if (st === 'cancelled') { normStatus = 'cancelled'; step = -1; }
+    if (st === 'delivered' || st === 'completed') { normStatus = 'delivered'; step = 4; }
+    else if (st === 'out_for_delivery' || st === 'out-for-delivery' || st === 'picked_up' || st === 'on_way') { normStatus = 'out_for_delivery'; step = 3; }
+    else if (st === 'ready_for_pickup' || st === 'ready_for_delivery' || st === 'ready' || st === 'packed') { normStatus = 'ready'; step = 2; }
+    else if (st === 'preparing' || st === 'accepted' || st === 'confirmed' || st === 'packing' || st === 'processing') { normStatus = 'preparing'; step = 1; }
+    else if (st === 'cancelled' || st === 'rejected') { normStatus = 'cancelled'; step = -1; }
     else { normStatus = 'placed'; step = 0; }
 
     const rawItems = Array.isArray(o.items)
@@ -168,14 +211,14 @@ export default function OrdersPage() {
       ? new Date(o.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       : o.time || '01:53 PM';
 
-    const cleanDisplayId = String(o.orderNumber || o.id || '').replace(/^GB-?/i, '');
-    const formattedId = cleanDisplayId.length > 5 ? cleanDisplayId.slice(0, 6).toUpperCase() : cleanDisplayId.toUpperCase() || 'DD619';
+    const displayId = formatDisplayOrderId(o);
 
     return {
       ...o,
-      id: o.id || `GB-${formattedId}`,
+      id: displayId,
       rawId: o.rawId || o.id,
-      displayId: `GB-${formattedId}`,
+      displayId: displayId,
+      orderNumber: displayId,
       placedDateText: `Placed on ${dateStr}, ${timeStr} • ${(o.payment_method || 'UPI').toUpperCase()}`,
       date: `${dateStr}, ${timeStr}`,
       status: normStatus,
@@ -186,9 +229,11 @@ export default function OrdersPage() {
         name: it.name || it.product_name || 'Express Grocery Items',
         qty: Number(it.qty || it.quantity) || 1,
         price: Number(it.price || it.unit_price) || 270,
-        image: it.image || it.image_url || 'apples-real.jpg',
+        image: it.image || it.image_url || it.raw_image || 'apples-real.jpg',
       })),
-      totalItems: rawItems.reduce((acc: number, it: any) => acc + (Number(it.qty || it.quantity) || 1), 0) || 1,
+      totalItems: rawItems.length > 0
+        ? rawItems.reduce((acc: number, it: any) => acc + (Number(it.qty || it.quantity) || 1), 0)
+        : (Number(o.totalItems) || Number(o.total_items) || 0),
       total: Number(o.total_amount || o.total) || 270,
       address: o.delivery_address || o.address || 'Kalyanagar, Kalyanagar, Bengaluru 560043',
       paymentMethod: (o.payment_method || 'UPI').toUpperCase(),
@@ -200,55 +245,144 @@ export default function OrdersPage() {
     };
   }, []);
 
-  const loadOrders = useCallback(async () => {
+  const loadOrders = useCallback(async (isMounted?: { current: boolean }) => {
+    // Don't run if phone not yet available — avoids overwriting cached orders with empty list
+    if (!phoneDigits) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const storageKey = `grabit_orders_${phoneDigits}`;
-      const [localUserOrders, globalOrders] = await Promise.all([
-        getItem<any[]>(storageKey),
-        getItem<any[]>('grabit_orders'),
+      const keysToRead = phoneDigits ? [`grabit_orders_${phoneDigits}`] : ['grabit_orders_guest'];
+
+      const readPromises = keysToRead.map((key) => getItem<any[]>(key).catch(() => []));
+      const apiPromise = get<any[]>(`/orders/user/${phoneDigits}`).catch(() => null);
+
+      const [apiRes, ...localResults] = await Promise.all([
+        apiPromise,
+        ...readPromises,
       ]);
 
-      const initialMerged = [...(localUserOrders || []), ...(globalOrders || [])];
-      if (initialMerged.length > 0) {
-        const uniqueMap = new Map<string, any>();
-        initialMerged.forEach((o) => {
-          const formatted = formatOrder(o);
-          uniqueMap.set(String(formatted.rawId || formatted.id), formatted);
-        });
-        setOrdersList(Array.from(uniqueMap.values()));
-        setIsLoading(false);
-      }
+      if (isMounted && !isMounted.current) return;
 
-      const fetchPath = phoneDigits ? `/orders/user/${phoneDigits}` : '/orders/';
-      const apiRes = await get<any[]>(fetchPath).catch(() => []);
+      const uniqueMap = new Map<string, any>();
 
-      if (apiRes && Array.isArray(apiRes) && apiRes.length > 0) {
-        const uniqueMap = new Map<string, any>();
+      const findMatchingKey = (fmt: any) => {
+        const pKey = String(fmt.rawId || fmt.id);
+        if (uniqueMap.has(pKey)) return pKey;
+        const dId = String(fmt.displayId || fmt.display_id || fmt.orderNumber || fmt.order_number || fmt.id || '').toUpperCase();
+        if (dId && dId.startsWith('GB-')) {
+          for (const [k, v] of uniqueMap.entries()) {
+            const vDisp = String(v.displayId || v.display_id || v.orderNumber || v.order_number || v.id || '').toUpperCase();
+            if (vDisp && (vDisp === dId || v.rawId === fmt.rawId || v.id === fmt.rawId || v.rawId === fmt.id)) return k;
+          }
+        }
+        for (const [k, v] of uniqueMap.entries()) {
+          if ((v.rawId && fmt.rawId && v.rawId === fmt.rawId) || (v.id && fmt.id && v.id === fmt.id)) return k;
+        }
+        return pKey;
+      };
+
+      // 1. Populate from local storage first (phone isolated)
+      localResults.forEach((orderArray) => {
+        if (Array.isArray(orderArray)) {
+          orderArray.forEach((o) => {
+            if (o && (o.id || o.rawId)) {
+              const oPhone = String(o.customer_phone || o.phone || '').replace(/\D/g, '');
+              if (oPhone && phoneDigits && oPhone.length >= 10 && phoneDigits.length >= 10 && oPhone.slice(-10) !== phoneDigits.slice(-10)) {
+                return; // Belongs to a different user account! Do not leak!
+              }
+              const formatted = formatOrder(o);
+              const key = findMatchingKey(formatted);
+              const existing = uniqueMap.get(key);
+              if (existing && existing.items && existing.items.length > 0 && (!formatted.items || formatted.items.length === 0)) {
+                formatted.items = existing.items;
+                formatted.totalItems = existing.totalItems;
+              }
+              uniqueMap.set(key, formatted);
+            }
+          });
+        }
+      });
+
+      // 2. Merge server API orders (overrides local with server-side truth, strictly phone-filtered)
+      if (apiRes !== null && Array.isArray(apiRes) && apiRes.length > 0) {
         apiRes.forEach((o) => {
-          const formatted = formatOrder(o);
-          uniqueMap.set(String(formatted.rawId || formatted.id), formatted);
-        });
-        (localUserOrders || []).forEach((o) => {
-          const formatted = formatOrder(o);
-          if (!uniqueMap.has(String(formatted.rawId || formatted.id))) {
-            uniqueMap.set(String(formatted.rawId || formatted.id), formatted);
+          if (o && (o.id || o.rawId)) {
+            const oPhone = String(o.customer_phone || o.phone || '').replace(/\D/g, '');
+            if (oPhone && phoneDigits && oPhone.length >= 10 && phoneDigits.length >= 10 && oPhone.slice(-10) !== phoneDigits.slice(-10)) {
+              return; // Belongs to a different user account! Do not leak!
+            }
+            const formatted = formatOrder(o);
+            const key = findMatchingKey(formatted);
+            const existing = uniqueMap.get(key);
+            if (existing && existing.items && existing.items.length > 0 && (!formatted.items || formatted.items.length === 0)) {
+              formatted.items = existing.items;
+              formatted.totalItems = existing.totalItems;
+            }
+            uniqueMap.set(key, formatted);
           }
         });
-        setOrdersList(Array.from(uniqueMap.values()));
+      }
+
+      const rawList = Array.from(uniqueMap.values());
+      const deduplicatedList: any[] = [];
+      rawList.forEach((o) => {
+        const oTime = o.created_at ? new Date(o.created_at).getTime() : 0;
+        const dupIndex = deduplicatedList.findIndex((existing) => {
+          if (existing.displayId && o.displayId && existing.displayId === o.displayId) return true;
+          if (existing.rawId && o.rawId && existing.rawId === o.rawId) return true;
+          const exTime = existing.created_at ? new Date(existing.created_at).getTime() : 0;
+          const sameTime = Math.abs(oTime - exTime) < 15000;
+          const sameTotal = Math.abs(Number(existing.total || 0) - Number(o.total || 0)) < 1;
+          return sameTime && sameTotal;
+        });
+        if (dupIndex === -1) {
+          deduplicatedList.push(o);
+        } else {
+          if (o.items && o.items.length > 0 && (!deduplicatedList[dupIndex].items || deduplicatedList[dupIndex].items.length === 0)) {
+            deduplicatedList[dupIndex].items = o.items;
+          }
+        }
+      });
+
+      deduplicatedList.sort((a, b) => {
+        const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return timeB - timeA;
+      });
+
+      // Only clear the list if the server explicitly returned [] (confirmed no orders)
+      // If apiRes is null (network error / timeout), keep showing local cached orders
+      const apiConfirmedEmpty = apiRes !== null && Array.isArray(apiRes) && apiRes.length === 0;
+      if (deduplicatedList.length > 0 || apiConfirmedEmpty) {
+        setOrdersList(deduplicatedList);
+      }
+
+      if (deduplicatedList.length > 0) {
+        await setItem(`grabit_orders_${phoneDigits}`, deduplicatedList).catch(() => {});
       }
     } catch {
-      // Network err
+      // Network error — silently ignore, keep showing whatever is in state
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
   }, [phoneDigits, formatOrder]);
 
-  useEffect(() => {
-    loadOrders();
-    const interval = setInterval(loadOrders, 10000);
-    return () => clearInterval(interval);
-  }, [loadOrders]);
+  // Reload every time this screen comes into focus (e.g. after checkout redirect)
+  useFocusEffect(
+    useCallback(() => {
+      const mountGuard = { current: true };
+      loadOrders(mountGuard);
+      // Poll every 15s (was 3s) — reduces API load while still keeping status fresh
+      const interval = setInterval(() => loadOrders(mountGuard), 15000);
+      return () => {
+        mountGuard.current = false;
+        clearInterval(interval);
+      };
+    }, [loadOrders])
+  );
 
   const onRefresh = () => {
     setIsRefreshing(true);
@@ -313,15 +447,11 @@ export default function OrdersPage() {
 
       setOrdersList((prev) => updateList(prev));
 
-      const storageKey = `grabit_orders_${phoneDigits}`;
-      const [localUserOrders, globalOrders] = await Promise.all([
-        getItem<any[]>(storageKey),
-        getItem<any[]>('grabit_orders'),
-      ]);
-      await Promise.all([
-        setItem(storageKey, updateList(localUserOrders || [])),
-        setItem('grabit_orders', updateList(globalOrders || [])),
-      ]);
+      if (phoneDigits) {
+        const storageKey = `grabit_orders_${phoneDigits}`;
+        const localUserOrders = await getItem<any[]>(storageKey).catch(() => []);
+        await setItem(storageKey, updateList(localUserOrders || [])).catch(() => {});
+      }
 
       showToast(`Order #${cancellingOrder.displayId || cancellingOrder.id} has been cancelled.`, 'info');
       setCancellingOrder(null);
@@ -330,6 +460,30 @@ export default function OrdersPage() {
       showToast('Failed to cancel order. Please try again.', 'error');
     } finally {
       setIsCancelling(false);
+    }
+  };
+
+  const handleClearAllOrders = async () => {
+    try {
+      await post('/orders/purge-all', {}).catch(() => {});
+      await patch('/orders/purge-all', {}).catch(() => {});
+      await purgeLocalOrderStorage(user?.phone || phoneDigits).catch(() => {});
+      await clearAllNotifications(user?.phone || phoneDigits).catch(() => {});
+      await clearAllLegacyOrderStorage().catch(() => {});
+      if (phoneDigits) {
+        await removeItem(`grabit_orders_${phoneDigits}`).catch(() => {});
+        await removeItem(`grabit_user_notifications_${phoneDigits}`).catch(() => {});
+      }
+      await removeItem('grabit_orders_guest').catch(() => {});
+      await removeItem('grabit_recent_orders').catch(() => {});
+      await removeItem('grabit_seller_orders').catch(() => {});
+      await removeItem('grabit_orders').catch(() => {});
+      await removeItem('grabit_user_notifications_guest').catch(() => {});
+      setOrdersList([]);
+      showToast('All order histories deleted successfully!', 'success');
+    } catch {
+      setOrdersList([]);
+      showToast('Order histories cleared.', 'info');
     }
   };
 
@@ -354,7 +508,7 @@ export default function OrdersPage() {
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase().trim();
       const matchId = (o.displayId || o.id || '').toLowerCase().includes(q);
-      const matchItem = (o.items || []).some((it: any) => it.name.toLowerCase().includes(q));
+      const matchItem = (o.items || []).some((it: any) => (it.name || it.product_name || '').toLowerCase().includes(q));
       return matchId || matchItem;
     });
   }, [ordersList, activeTab, searchQuery]);
@@ -398,9 +552,15 @@ export default function OrdersPage() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={['#0071E3']} />}
       >
-        {/* ── 3. PAGE TITLE ── */}
+        {/* ── 3. PAGE TITLE & CLEAR HISTORY ── */}
         <View style={styles.titleSection}>
           <Text style={styles.titleText}>My Orders</Text>
+          {ordersList.length > 0 && (
+            <Pressable style={styles.clearHistoryBtn} onPress={handleClearAllOrders}>
+              <Trash2 size={13} color="#EF4444" style={{ marginRight: 4 }} />
+              <Text style={styles.clearHistoryText}>Clear History</Text>
+            </Pressable>
+          )}
         </View>
 
         {/* ── 4. STATUS FILTER TABS ── */}
@@ -465,10 +625,10 @@ export default function OrdersPage() {
                   <View
                     style={[
                       styles.statusBadgePill,
-                      order.status === 'out_for_delivery' && styles.badgeOutForDelivery,
-                      order.status === 'delivered' && styles.badgeDelivered,
-                      order.status === 'ready' && styles.badgeReady,
-                      order.status === 'preparing' && styles.badgePreparing,
+                      (order.status === 'out_for_delivery' || order.status === 'out-for-delivery') && styles.badgeOutForDelivery,
+                      (order.status === 'delivered' || order.status === 'completed') && styles.badgeDelivered,
+                      (order.status === 'ready' || order.status === 'ready_for_pickup') && styles.badgeReady,
+                      (order.status === 'preparing' || order.status === 'confirmed') && styles.badgePreparing,
                       order.status === 'placed' && styles.badgePlaced,
                       order.status === 'cancelled' && styles.badgeCancelled,
                     ]}
@@ -476,18 +636,18 @@ export default function OrdersPage() {
                     <Text
                       style={[
                         styles.statusBadgeText,
-                        order.status === 'out_for_delivery' && styles.badgeTextOutForDelivery,
-                        order.status === 'delivered' && styles.badgeTextDelivered,
-                        order.status === 'ready' && styles.badgeTextReady,
-                        order.status === 'preparing' && styles.badgeTextPreparing,
+                        (order.status === 'out_for_delivery' || order.status === 'out-for-delivery') && styles.badgeTextOutForDelivery,
+                        (order.status === 'delivered' || order.status === 'completed') && styles.badgeTextDelivered,
+                        (order.status === 'ready' || order.status === 'ready_for_pickup') && styles.badgeTextReady,
+                        (order.status === 'preparing' || order.status === 'confirmed') && styles.badgeTextPreparing,
                         order.status === 'placed' && styles.badgeTextPlaced,
                         order.status === 'cancelled' && styles.badgeTextCancelled,
                       ]}
                     >
-                      {order.status === 'delivered' && '✓ Delivered'}
-                      {order.status === 'out_for_delivery' && '🛵 Out for Delivery'}
-                      {order.status === 'ready' && '📦 Ready for Pickup'}
-                      {order.status === 'preparing' && '⏱️ Preparing Order'}
+                      {(order.status === 'delivered' || order.status === 'completed') && '✓ Delivered'}
+                      {(order.status === 'out_for_delivery' || order.status === 'out-for-delivery') && '🛵 Out for Delivery'}
+                      {(order.status === 'ready' || order.status === 'ready_for_pickup') && '📦 Ready for Pickup'}
+                      {(order.status === 'preparing' || order.status === 'confirmed') && '⏱️ Preparing Order'}
                       {order.status === 'placed' && '⏱ Order Placed'}
                       {order.status === 'cancelled' && '✕ Cancelled'}
                     </Text>
@@ -506,7 +666,7 @@ export default function OrdersPage() {
                         <Text style={styles.trackerLiveText} numberOfLines={1}>LIVE TRACKER STATUS</Text>
                       </View>
                       <View style={styles.trackerEtaPill}>
-                        <Text style={styles.trackerEtaText} numberOfLines={1}>⚡ ETA: {order.eta || '15 min'}</Text>
+                        <Text style={styles.trackerEtaText} numberOfLines={1}>⚡ ETA: Arriving in {order.eta || '15 min'}</Text>
                       </View>
                     </View>
 
@@ -569,6 +729,11 @@ export default function OrdersPage() {
                           {activeStage.desc}
                         </Text>
                       </View>
+                      {(order.status === 'out_for_delivery' || order.status === 'ready' || order.delivery_agent_id) && (
+                        <View style={styles.riderAssignedBadge}>
+                          <Text style={styles.riderAssignedText}>🛵 Rider Assigned</Text>
+                        </View>
+                      )}
                     </View>
                   </View>
                 )}
@@ -579,8 +744,11 @@ export default function OrdersPage() {
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.thumbnailsScroll}
                 >
-                  {(order.items || []).map((it: any, idx: number) => {
-                    const imgSource = resolveProductImage(it.image);
+                  {((order.items && order.items.length > 0)
+                    ? order.items
+                    : [{ image: 'fresh-fruits-veggies-hero-transparent.png' }]
+                  ).map((it: any, idx: number) => {
+                    const imgSource = resolveProductImage(it.image || it.image_url);
                     return (
                       <View key={idx} style={styles.thumbnailBox}>
                         <Image source={imgSource} style={styles.thumbnailImg} resizeMode="contain" />
@@ -592,7 +760,7 @@ export default function OrdersPage() {
                 {/* ── TOTAL ITEMS & AMOUNT SUMMARY ── */}
                 <View style={styles.orderSummaryRow}>
                   <Text style={styles.orderSummaryCount}>
-                    Total: <Text style={{ fontWeight: '800', color: '#0F172A' }}>{order.totalItems} items</Text> •{' '}
+                    <Text style={{ fontWeight: '800', color: '#0F172A' }}>{order.totalItems} items</Text> • Total{' '}
                     <Text style={styles.orderSummaryTotal}>₹{order.total}</Text>
                   </Text>
                 </View>
@@ -607,7 +775,7 @@ export default function OrdersPage() {
                         setCancellingOrder(order);
                       }}
                     >
-                      <Text style={styles.cancelBtnText}>Cancel Order</Text>
+                      <Text style={styles.cancelBtnText}>Cancel</Text>
                     </Pressable>
                   ) : null}
 
@@ -618,21 +786,19 @@ export default function OrdersPage() {
                     <Text style={styles.viewDetailsBtnText}>View Details</Text>
                   </Pressable>
 
-                  {!isCancelled && !isOngoing ? (
+                  {isOngoing && !isCancelled ? (
+                    <Pressable
+                      style={styles.reorderBtn}
+                      onPress={() => router.push(`/customer/order/${order.rawId || order.id}` as any)}
+                    >
+                      <Text style={styles.reorderBtnText}>Track Order</Text>
+                    </Pressable>
+                  ) : !isCancelled ? (
                     <Pressable style={styles.reorderBtn} onPress={() => handleReorder(order)}>
                       <Text style={styles.reorderBtnText}>Reorder Items</Text>
                     </Pressable>
                   ) : null}
                 </View>
-
-                {isOngoing && !isCancelled ? (
-                  <Pressable
-                    style={styles.trackOrderFullBtn}
-                    onPress={() => router.push(`/customer/order/${order.rawId || order.id}` as any)}
-                  >
-                    <Text style={styles.trackOrderFullBtnText}>Track Live Status →</Text>
-                  </Pressable>
-                ) : null}
               </View>
             );
           })
@@ -702,7 +868,9 @@ export default function OrdersPage() {
                       <Text style={styles.trackerLiveText} numberOfLines={1}>LIVE TRACKER STATUS</Text>
                     </View>
                     <View style={styles.trackerEtaPill}>
-                      <Text style={styles.trackerEtaText} numberOfLines={1}>⚡ ETA: {selectedOrderModal?.eta || '15 min'}</Text>
+                      <Text style={styles.trackerEtaText} numberOfLines={1}>
+                        ⚡ ETA: {selectedOrderModal?.eta ? (selectedOrderModal.eta.toLowerCase().includes('arriving') ? selectedOrderModal.eta : `Arriving in ${selectedOrderModal.eta}`) : 'Arriving in 15 min'}
+                      </Text>
                     </View>
                   </View>
 
@@ -773,41 +941,64 @@ export default function OrdersPage() {
               <View style={styles.modalAddressCard}>
                 <Text style={styles.modalAddressHeader}>DELIVERY ADDRESS</Text>
                 <Text style={styles.modalAddressBody}>
-                  {selectedOrderModal?.address || 'Kalyanagar, Kalyanagar, Bengaluru 560043'}
+                  {selectedOrderModal?.address || 'Indiranagar, Bangalore'}
                 </Text>
               </View>
 
               {/* ── 3. ORDERED ITEMS LIST ── */}
-              <Text style={styles.modalItemsSectionTitle}>
-                ORDERED ITEMS ({selectedOrderModal?.items?.length || 0})
-              </Text>
+              {(() => {
+                const modalItemsList = (selectedOrderModal?.items && selectedOrderModal.items.length > 0)
+                  ? selectedOrderModal.items
+                  : [
+                      {
+                        id: 'express-item-1',
+                        name: 'Express Grocery Items',
+                        qty: 1,
+                        price: Number(selectedOrderModal?.total) || 129,
+                        image: 'fresh-fruits-veggies-hero-transparent.png',
+                      }
+                    ];
+                return (
+                  <>
+                    <Text style={styles.modalItemsSectionTitle}>
+                      ORDERED ITEMS ({modalItemsList.length})
+                    </Text>
 
-              <View style={styles.modalItemsList}>
-                {(selectedOrderModal?.items || []).map((item: any, idx: number) => {
-                  const imgSource = resolveProductImage(item.image);
-                  return (
-                    <View key={idx} style={styles.modalItemCard}>
-                      <View style={styles.modalItemLeft}>
-                        <View style={styles.modalItemImgBox}>
-                          <Image source={imgSource} style={styles.modalItemImg} resizeMode="contain" />
-                        </View>
-                        <View style={styles.modalItemTextGroup}>
-                          <Text style={styles.modalItemName} numberOfLines={2}>{item.name}</Text>
-                          <Text style={styles.modalItemQty}>Qty: {item.qty} × ₹{item.price}</Text>
-                        </View>
-                      </View>
-                      <Text style={styles.modalItemTotal}>₹{item.price * item.qty}</Text>
+                    <View style={styles.modalItemsList}>
+                      {modalItemsList.map((item: any, idx: number) => {
+                        const imgSource = resolveProductImage(item.image);
+                        const itemQty = Number(item.qty) || 1;
+                        const itemPrice = Number(item.price) || Number(selectedOrderModal?.total) || 129;
+                        const itemTotal = itemQty * itemPrice;
+
+                        return (
+                          <View key={idx} style={styles.modalItemCard}>
+                            <View style={styles.modalItemLeft}>
+                              <View style={styles.modalItemImgBox}>
+                                <Image source={imgSource} style={styles.modalItemImg} resizeMode="contain" />
+                              </View>
+                              <View style={styles.modalItemTextGroup}>
+                                <Text style={styles.modalItemName} numberOfLines={2}>{item.name}</Text>
+                                <Text style={styles.modalItemQty}>Qty: {itemQty} × ₹{itemPrice}</Text>
+                              </View>
+                            </View>
+                            <Text style={styles.modalItemTotal}>₹{itemTotal}</Text>
+                          </View>
+                        );
+                      })}
                     </View>
-                  );
-                })}
-              </View>
+                  </>
+                );
+              })()}
 
               {/* ── 4. PRICE BREAKDOWN ── */}
               <View style={styles.modalPriceBreakdown}>
                 <View style={styles.modalPriceLine}>
                   <Text style={styles.modalPriceLabel}>Item Total</Text>
                   <Text style={styles.modalPriceVal}>
-                    ₹{selectedOrderModal?.mrp_total || selectedOrderModal?.subtotal || selectedOrderModal?.total}
+                    ₹{Number(selectedOrderModal?.mrp_total) > Number(selectedOrderModal?.subtotal || selectedOrderModal?.total)
+                      ? selectedOrderModal.mrp_total
+                      : ((Number(selectedOrderModal?.subtotal) || Number(selectedOrderModal?.total) || 0) + (Number(selectedOrderModal?.discount) || 0))}
                   </Text>
                 </View>
 
@@ -1113,11 +1304,29 @@ const styles = StyleSheet.create({
   titleSection: {
     marginTop: 4,
     marginBottom: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   titleText: {
     fontSize: 22,
     fontWeight: '900',
     color: '#0F172A',
+  },
+  clearHistoryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+  },
+  clearHistoryText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#EF4444',
   },
   filterTabsRow: {
     flexDirection: 'row',
@@ -1861,6 +2070,20 @@ const styles = StyleSheet.create({
   cancelModalActionsRow: {
     flexDirection: 'row',
     gap: 10,
+  },
+  riderAssignedBadge: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    marginLeft: 6,
+  },
+  riderAssignedText: {
+    color: '#1D4ED8',
+    fontSize: 10,
+    fontWeight: '800',
   },
   keepOrderBtn: {
     flex: 1,

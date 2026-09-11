@@ -83,3 +83,43 @@ export async function removeItem(key: string): Promise<void> {
     console.warn('Storage removeItem failed:', e);
   }
 }
+
+export async function clearAllLegacyOrderStorage(): Promise<void> {
+  try {
+    await AsyncStorage.multiRemove([
+      'grabit_orders',
+      'grabit_orders_guest',
+      'grabit_recent_orders',
+      'grabit_seller_orders',
+      'grabit_user_notifications_guest',
+      'grabit_read_notifications',
+      'grabit_dismissed_notifications',
+    ]);
+  } catch {
+    // Ignore error
+  }
+}
+
+export async function purgeLocalOrderStorage(phone?: string): Promise<void> {
+  try {
+    const digits = (phone || '').replace(/\D/g, '');
+    const cleanPhone = digits.length >= 10 ? digits.slice(-10) : digits;
+    const keysToRemove = [
+      'grabit_orders',
+      'grabit_orders_guest',
+      'grabit_recent_orders',
+      'grabit_seller_orders',
+      'grabit_user_notifications_guest',
+      'grabit_read_notifications',
+      'grabit_dismissed_notifications',
+    ];
+    if (cleanPhone) {
+      keysToRemove.push(`grabit_orders_${cleanPhone}`);
+      keysToRemove.push(`grabit_user_notifications_${cleanPhone}`);
+    }
+    await AsyncStorage.multiRemove(keysToRemove);
+  } catch {
+    // Ignore error
+  }
+}
+

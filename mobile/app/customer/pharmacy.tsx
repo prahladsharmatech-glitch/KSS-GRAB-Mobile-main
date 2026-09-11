@@ -22,6 +22,7 @@ import { ProductCard } from '../../components/ProductCard';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import { products as localProducts } from '../../data/products';
 import { get } from '../../services/api';
+import { getCloudinaryUrl } from '../../services/cloudinary';
 import { Product } from '../../types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -264,7 +265,7 @@ export default function PharmacyPage() {
           <View style={styles.mainCard}>
             {/* Embedded Pharmacy Hero Graphic Banner */}
             <Image
-              source={require('../../assets/banner-pharmacy.png')}
+              source={{ uri: getCloudinaryUrl('banner-pharmacy.png') }}
               style={styles.bannerImage}
               resizeMode="cover"
             />

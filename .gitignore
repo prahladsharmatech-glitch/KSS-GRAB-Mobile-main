@@ -8,3 +8,20 @@ __pycache__/
 node_modules/
 dist/
 .DS_Store
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+
+# Scratch & Temporary Logs
+scratch/
+.expo/
+.agents/
+*.db
+backend/app/data/orders_items.json
+backend/app/data/support_tickets.json
+backend/app/orders_items.json
+
