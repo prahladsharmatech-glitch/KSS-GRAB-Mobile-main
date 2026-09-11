@@ -20,6 +20,7 @@ import { useToast } from '../../../context/ToastContext';
 import { get, patch } from '../../../services/api';
 import { getItem, setItem } from '../../../services/storage';
 import { formatDisplayOrderId } from '../../../utils/orderUtils';
+import { getRealUserNotifications } from '../../../utils/userNotifications';
 import { products } from '../../../data/products';
 import { getValidImage, optimizeImageUrl, DEFAULT_FALLBACK_IMAGE } from '../../../services/cloudinary';
 import { COLORS, SPACING, SHADOWS } from '../../../constants/theme';
@@ -260,7 +261,7 @@ export default function OrderDetailsPage() {
             const rawMatch = matchingNotif.message?.match(/#(GB-[A-Z0-9]+)/i)?.[1] || matchingNotif.orderId || id;
             const isDelivered = matchingNotif.title?.toLowerCase().includes('delivered') || matchingNotif.message?.toLowerCase().includes('delivered');
             const isCancelled = matchingNotif.title?.toLowerCase().includes('cancelled') || matchingNotif.message?.toLowerCase().includes('cancelled');
-            const notifDate = matchingNotif.created_at || matchingNotif.timestamp ? new Date(matchingNotif.created_at || matchingNotif.timestamp) : new Date();
+            const notifDate = matchingNotif.created_at || (matchingNotif as any).timestamp ? new Date(matchingNotif.created_at || (matchingNotif as any).timestamp) : new Date();
             setOrder(formatOrderData({
               id: rawMatch,
               rawId: rawMatch,

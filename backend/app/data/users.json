@@ -25,14 +25,19 @@
     "license_number": "DL-KA-05-2024009182",
     "partnerVerified": true,
     "biometricsDone": true,
-    "last_active_at": null,
+    "last_active_at": "2026-09-11T15:32:54.784110+05:30",
     "created_at": "2026-01-01T08:00:00Z",
     "battery_low": false,
-    "shift_started_at": null,
-    "arrived_late_today": false,
+    "shift_started_at": "2026-09-11T15:32:33.119170+05:30",
+    "arrived_late_today": true,
     "presence_status": "ABSENT",
     "status": "ABSENT",
-    "shift_sessions": [],
+    "shift_sessions": [
+      {
+        "started_at": "2026-09-11T15:32:33.119170+05:30",
+        "ended_at": "2026-09-11T15:32:54.784110+05:30"
+      }
+    ],
     "verification_status": "ADMIN_VERIFIED",
     "verified_by_admin": true,
     "clearances": {
@@ -44,7 +49,9 @@
     "insuranceNo": "POL-HDFC-99201",
     "insurance_no": "POL-HDFC-99201",
     "pucNo": "PUC-KA05-882190",
-    "puc_no": "PUC-KA05-882190"
+    "puc_no": "PUC-KA05-882190",
+    "auto_logged_out": false,
+    "connectivity_lost_at": null
   },
   {
     "id": "d7e8f9a0-b1c2-3d4e-5f6a-7b8c9d0e1f2a",

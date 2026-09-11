@@ -18,7 +18,7 @@ import { useCart } from '../../context/CartContext';
 import { useLocation } from '../../context/LocationContext';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
-import { get, patch } from '../../services/api';
+import { get, post, patch } from '../../services/api';
 import { getItem, setItem, removeItem, clearAllLegacyOrderStorage, purgeLocalOrderStorage } from '../../services/storage';
 import { products } from '../../data/products';
 import { getValidImage, optimizeImageUrl, DEFAULT_FALLBACK_IMAGE } from '../../services/cloudinary';

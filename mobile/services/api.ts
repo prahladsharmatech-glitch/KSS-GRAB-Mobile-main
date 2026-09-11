@@ -402,7 +402,15 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
         const cloudData = await fetchDirectFromSupabase<T>(cleanPath);
         if (cloudData) return cloudData;
       }
-      throw new Error(data.detail || `Server error (${response.status})`);
+      // For POST/PATCH, tag the error with the HTTP status so callers can distinguish
+      // backend business-logic rejections (4xx) from network failures
+      const errMsg = (typeof data.detail === 'string' ? data.detail : null) ||
+        (Array.isArray(data.detail) ? data.detail.map((d: any) => d.msg || d).join('; ') : null) ||
+        `Server error (${response.status})`;
+      const thrownErr: any = new Error(errMsg);
+      thrownErr.statusCode = response.status;
+      thrownErr.isBackendError = true;
+      throw thrownErr;
     }
 
     if (isGet && data && !isDeliveryPath) {
@@ -423,8 +431,12 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
       return null;
     }
 
-    // Direct Supabase Cloud REST Fallback for POST/PATCH when local backend is unreachable
-    if (cleanPath.startsWith('/orders') || cleanPath.startsWith('/store') || cleanPath.startsWith('/seller')) {
+    // Direct Supabase Cloud REST Fallback for POST/PATCH when local backend is unreachable.
+    // IMPORTANT: Only fall back if this was a genuine network/timeout error, NOT if the backend
+    // explicitly returned a 4xx error (out-of-stock, validation failure, etc.).
+    // Backend business-logic errors must bubble up to the caller so the user sees them.
+    const isBackendRejection = (err as any)?.isBackendError === true;
+    if (!isBackendRejection && (cleanPath.startsWith('/orders') || cleanPath.startsWith('/store') || cleanPath.startsWith('/seller'))) {
       const reqBody = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
       if (options.method === 'POST') {
         const cloudPost = await postDirectToSupabase<T>('orders', reqBody);
@@ -434,6 +446,11 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
         if (cloudPatch) return cloudPatch;
         return { success: true, status: reqBody?.status } as unknown as T;
       }
+    }
+
+    // Re-throw backend business-logic errors so callers can show user-facing messages
+    if (isBackendRejection) {
+      throw err;
     }
 
     if (options.method === 'PATCH' || options.method === 'POST') {
