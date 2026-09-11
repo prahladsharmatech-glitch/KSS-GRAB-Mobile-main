@@ -191,30 +191,20 @@ async def cache_get(key: str):
             return res
     return None
 
-<<<<<<< HEAD
-async def cache_set(key: str, value: any, ttl_seconds: int = 3600):
+async def cache_set(key: str, value: any, ttl_seconds: int = 3600) -> bool:
     """Store JSON serializable value in Redis cache with TTL."""
-    val_str = json.dumps(value)
     try:
+        val_str = json.dumps(value)
         await _redis_exec_raw(["SET", key, val_str, "EX", ttl_seconds])
         _local_cache_fallback.pop(key, None)
+        return True
     except RedisUnavailable:
         # Keep serving reads/writes locally until Redis comes back.
         _local_cache_fallback[key] = value
-=======
-async def cache_set(key: str, value: any, ttl_seconds: int = 3600) -> bool:
-    """Store JSON serializable value in Redis cache with TTL. Returns False if Redis write failed."""
-    try:
-        val_str = json.dumps(value)
-        res = await redis_exec(["SET", key, val_str, "EX", ttl_seconds])
-        if res is None:
-            logging.error(f"Redis SET returned empty result for key={key}")
-            return False
         return True
     except Exception as err:
         logging.error(f"Redis SET failed for key={key}: {err}")
         return False
->>>>>>> origin/main
 
 async def cache_del(key: str):
     """Remove key from Redis cache."""
@@ -320,7 +310,6 @@ async def resolve_postgres_order_id(order_id: str) -> str:
         short_suffix = short_suffix[1:]
     short_suffix = short_suffix.lower().strip()
 
-<<<<<<< HEAD
     # 2. Query Postgres for matching ID starting with short_suffix (customer app uses first 6 hex characters)
     async def _prefix_get():
         return await store.get("orders", {"id": f"ilike.{short_suffix}*", "select": "id"})
@@ -329,16 +318,10 @@ async def resolve_postgres_order_id(order_id: str) -> str:
     if p_ok and isinstance(p_rows, list) and len(p_rows) > 0 and p_rows[0].get("id"):
         return str(p_rows[0]["id"])
 
-    # 3. Query Postgres for matching ID ending with short_suffix
-    async def _suffix_get():
-        return await store.get("orders", {"id": f"ilike.*{short_suffix}", "select": "id"})
-=======
-    # 2. Query Postgres for matching ID ending with short_suffix (only for non-UUID formatted IDs e.g. GB-XXXXX)
+    # 3. Query Postgres for matching ID ending with short_suffix (only for non-UUID formatted IDs e.g. GB-XXXXX)
     if not is_valid_uuid(clean_id):
         async def _suffix_get():
             return await store.get("orders", {"id": f"ilike.*{short_suffix}", "select": "id"})
->>>>>>> origin/main
-
         s_rows, s_ok = await execute_with_retry(_suffix_get, max_attempts=2, base_delay=0.1, op_name="resolve_order_id_suffix", order_id=clean_id)
         if s_ok and isinstance(s_rows, list) and len(s_rows) > 0 and s_rows[0].get("id"):
             return str(s_rows[0]["id"])
@@ -627,16 +610,13 @@ async def idempotent_order_upsert(order_id: str, patch_data: dict, fallback_sing
         "total": total_val,
         "created_at": created_at_val
     }
-<<<<<<< HEAD
     if cust_id:
         db_insert["customer_id"] = cust_id
     if store_id:
         db_insert["store_id"] = store_id
-=======
     for column in ("workflow_step", "otp_verified", "otp_verified_at", "proof_photo_url"):
         if column in safe_patch:
             db_insert[column] = safe_patch[column]
->>>>>>> origin/main
     if rider_val:
         db_insert["delivery_agent_id"] = rider_val
 

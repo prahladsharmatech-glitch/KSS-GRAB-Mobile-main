@@ -16,7 +16,7 @@ import { get, post, patch } from '../../services/api';
 import { getItem, setItem, removeItem } from '../../services/storage';
 import { Order } from '../../types';
 export { Order };
-import { formatDisplayOrderId } from '../../utils/orderUtils';
+import { formatDisplayOrderId, isSameOrderId } from '../../utils/orderUtils';
 import { useToast } from '../../context/ToastContext';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import * as Print from 'expo-print';
@@ -186,13 +186,13 @@ export default function SellerOrdersScreen() {
         }
       });
 
-      const seenIds = new Set(combined.map((o) => o.id || o.rawId));
       if (Array.isArray(cached)) {
         for (const co of cached) {
-          const cid = co.id || co.rawId;
-          if (cid && !seenIds.has(cid)) {
-            seenIds.add(cid);
-            combined.push(co);
+          if (co && (co.id || co.rawId)) {
+            const alreadyInCombined = combined.some((ao) => isSameOrderId(ao, co));
+            if (!alreadyInCombined) {
+              combined.push(co);
+            }
           }
         }
       }
@@ -259,14 +259,15 @@ export default function SellerOrdersScreen() {
     let previousOrders: Order[] = [];
     setOrders((prev) => {
       previousOrders = prev;
-      const updated = prev.map((o) => (o.id === orderId || o.rawId === orderId ? { ...o, status: newStatus } : o));
+      const updated = prev.map((o) => (isSameOrderId(o, orderId) ? { ...o, status: newStatus } : o));
       setItem('grabit_seller_orders', updated).catch(() => {});
       return updated;
     });
-    showToast(`Order #${orderId} updated to ${newStatus}`, 'success');
+    showToast(`Order updated to ${newStatus}`, 'success');
 
     try {
       await patch(`/orders/${encodeURIComponent(orderId)}/status`, { status: newStatus.toLowerCase() });
+      await fetchOrdersSilent();
     } catch (err: any) {
       if (previousOrders.length > 0) {
         setOrders(previousOrders);
