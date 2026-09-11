@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, Switch } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import * as LocalAuthentication from 'expo-local-authentication';
-import { get, patch } from '../../services/api';
-import { getItem, setItem } from '../../services/storage';
+import { get } from '../../services/api';
+import { getItem } from '../../services/storage';
+import { useRiderDuty, LocalAttendanceLog } from '../../context/RiderDutyContext';
 import { useToast } from '../../context/ToastContext';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import {
@@ -28,8 +29,8 @@ import {
 
 export default function RiderAttendanceScreen() {
   const { showToast } = useToast();
+  const { isOnline, toggleDuty, refreshDutyStatus } = useRiderDuty();
   const [isAuthenticated, setIsAuthenticated] = useState(true);
-  const [onShift, setOnShift] = useState(false);
   const [breakMode, setBreakMode] = useState(false);
   const [punchInTime, setPunchInTime] = useState('--');
   const [activeHoursStr, setActiveHoursStr] = useState('--');
@@ -43,7 +44,7 @@ export default function RiderAttendanceScreen() {
     detail?: string;
   }
 
-  const generateMonthGrid = (monthStr: string, isOnline: boolean): CalendarDay[] => {
+  const generateMonthGrid = (monthStr: string, currentOnline: boolean, localLog: LocalAttendanceLog = {}): CalendarDay[] => {
     const now = new Date();
     const [y, m] = monthStr.split('-').map(Number);
     const daysInMonth = new Date(y, m, 0).getDate();
@@ -59,6 +60,8 @@ export default function RiderAttendanceScreen() {
     for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
       const dayDate = new Date(y, m - 1, dayNum);
       const isSunday = dayDate.getDay() === 0;
+      const dayDateStr = `${y}-${String(m).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+      const localRec = localLog[dayDateStr];
 
       let status: CalendarDay['status'] = 'NORMAL';
       let title = 'SCHEDULED';
@@ -68,14 +71,26 @@ export default function RiderAttendanceScreen() {
         status = 'WEEK_OFF';
         title = 'LEAVE';
         detail = 'Sunday Weekly Off';
-      } else if (dayNum === currentDayNum && isOnline) {
+      } else if (localRec && localRec.status === 'PRESENT') {
+        // Punched in via local log (persisted across logout/login)
+        status = 'PRESENT';
+        title = 'PRESENT';
+        detail = `Present — Shift logged at ${localRec.punchIn}`;
+      } else if (dayNum === currentDayNum && currentOnline) {
+        // Currently online today
         status = 'PRESENT';
         title = 'PRESENT';
         detail = 'Shift Active — On Duty';
       } else if (dayNum < currentDayNum) {
+        // Past working days with no shift -> ABSENT
         status = 'ABSENT';
         title = 'ABSENT';
         detail = 'Absent — No shift recorded';
+      } else if (dayNum === currentDayNum) {
+        // Today, not punched in yet
+        status = 'NORMAL';
+        title = 'SCHEDULED';
+        detail = 'Today — Shift not started yet • Punch In to start';
       }
 
       formattedDays.push({ dayNum, status, title, detail });
@@ -94,46 +109,29 @@ export default function RiderAttendanceScreen() {
     try {
       const now = new Date();
       const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       const currentDayNum = now.getDate();
 
       const res: any = await get(`/delivery/attendance?month=${monthStr}`).catch(() => null);
-      const profileRes: any = await get('/delivery/agent/me').catch(() => null);
 
-      let currentOnline = false;
-      try {
-        const storedVal = await getItem<string>('@grabit_rider_is_online').catch(() => null);
-        if (storedVal === 'true') {
-          currentOnline = true;
-        } else if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
-          const local = localStorage.getItem('@grabit_rider_is_online');
-          if (local === 'true') currentOnline = true;
-        }
-      } catch {}
+      // Use isOnline from context — DO NOT overwrite duty state here
+      const currentOnline = isOnline;
 
+      // Fetch profile data for earnings/punch time (NOT for duty state)
+      const profileRes: any = await get('/delivery/presence-status').catch(() => null);
       if (profileRes) {
         const u = profileRes.user || profileRes;
-        if (u && u.is_online !== undefined) {
-          currentOnline = Boolean(u.is_online);
-          setItem('@grabit_rider_is_online', String(currentOnline)).catch(() => {});
-          try {
-            if (typeof window !== 'undefined' && typeof localStorage !== 'undefined' && localStorage.setItem) {
-              localStorage.setItem('@grabit_rider_is_online', String(currentOnline));
-            }
-          } catch {}
-          setOnShift(currentOnline);
-        }
         if (u && u.todays_earnings !== undefined) {
           setTodaysEarnings(u.todays_earnings);
         }
         if (u && u.punch_in_time && u.punch_in_time !== '--') {
           setPunchInTime(u.punch_in_time);
         }
-      } else {
-        setOnShift(currentOnline);
       }
 
-      const baseDays = generateMonthGrid(monthStr, currentOnline);
+      // Load local attendance log for merging
+      const localLog: LocalAttendanceLog = await getItem<LocalAttendanceLog>('@grabit_attendance_log').catch(() => null) || {};
+
+      const baseDays = generateMonthGrid(monthStr, currentOnline, localLog);
       const daysMap = new Map<number, any>();
       if (res && res.days && Array.isArray(res.days)) {
         res.days.forEach((d: any) => {
@@ -148,6 +146,7 @@ export default function RiderAttendanceScreen() {
 
         let status: CalendarDay['status'] = bd.status;
         let title = bd.title;
+        let detail = bd.detail;
 
         if (d) {
           if (d.status === 'PRESENT') {
@@ -171,8 +170,19 @@ export default function RiderAttendanceScreen() {
           title = 'PRESENT';
         }
 
+        // Merge with local attendance log — if local says PRESENT, override ABSENT/NORMAL
+        const [y, m] = monthStr.split('-').map(Number);
+        const dayDateStr = `${y}-${String(m).padStart(2, '0')}-${String(bd.dayNum).padStart(2, '0')}`;
+        const localRecord = localLog[dayDateStr];
+        if (localRecord && localRecord.status === 'PRESENT' && status !== 'PRESENT' && status !== 'WEEK_OFF' && status !== 'LATE') {
+          status = 'PRESENT';
+          title = 'PRESENT';
+          detail = `Punched in at ${localRecord.punchIn}`;
+        }
+
         if (bd.dayNum === currentDayNum) {
           if (d && d.check_in) setPunchInTime(d.check_in);
+          else if (localRecord && localRecord.punchIn) setPunchInTime(localRecord.punchIn);
           else if (currentOnline && punchInTime === '--') setPunchInTime(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
           if (d && d.duration) setActiveHoursStr(d.duration);
         }
@@ -181,7 +191,7 @@ export default function RiderAttendanceScreen() {
           dayNum: bd.dayNum,
           status,
           title,
-          detail: d?.detail || bd.detail || (status === 'PRESENT' ? 'Shift Active — On Duty' : status === 'WEEK_OFF' ? 'Weekoff — Scheduled Weekly Off' : status === 'ABSENT' ? 'Absent — No shift recorded' : 'Scheduled Shift'),
+          detail: d?.detail || detail || (status === 'PRESENT' ? 'Shift Active — On Duty' : status === 'WEEK_OFF' ? 'Weekoff — Scheduled Weekly Off' : status === 'ABSENT' ? 'Absent — No shift recorded' : 'Scheduled Shift'),
         };
       });
 
@@ -215,27 +225,20 @@ export default function RiderAttendanceScreen() {
     } catch {
       // no-op
     }
-  }, []);
+  }, [isOnline]);
 
   useFocusEffect(
     useCallback(() => {
       fetchAttendance();
-    }, [fetchAttendance])
+      refreshDutyStatus();
+    }, [fetchAttendance, refreshDutyStatus])
   );
 
   useEffect(() => {
     fetchAttendance();
     const interval = setInterval(fetchAttendance, 10000);
-
-    const handleUpdate = () => fetchAttendance();
-    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-      window.addEventListener('grabit_rider_online_updated', handleUpdate);
-    }
     return () => {
       clearInterval(interval);
-      if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
-        window.removeEventListener('grabit_rider_online_updated', handleUpdate);
-      }
     };
   }, [fetchAttendance]);
 
@@ -272,7 +275,7 @@ export default function RiderAttendanceScreen() {
       }
 
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: onShift
+        promptMessage: isOnline
           ? 'Verify Biometrics to End Shift'
           : 'Verify Biometrics to Punch In',
         fallbackLabel: 'Use PIN',
@@ -289,23 +292,24 @@ export default function RiderAttendanceScreen() {
   };
 
   const toggleShiftStatus = async () => {
-    const nextState = !onShift;
-    setOnShift(nextState);
+    const nextState = !isOnline;
     if (!nextState) {
       setBreakMode(false);
       setPunchInTime('--');
-      await patch('/delivery/agent/status', { is_online: false }).catch(() => {});
-      showToast('Punched OUT of shift!', 'info');
     } else {
       setPunchInTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-      await patch('/delivery/agent/status', { is_online: true }).catch(() => {});
-      showToast('Punched IN for shift successfully!', 'success');
     }
+    // Use context — this persists to storage, calls correct backend, and updates navbar
+    await toggleDuty(nextState);
+    showToast(
+      nextState ? 'Punched IN for shift successfully!' : 'Punched OUT of shift!',
+      nextState ? 'success' : 'info'
+    );
     await fetchAttendance();
   };
 
   const toggleBreak = () => {
-    if (!onShift) {
+    if (!isOnline) {
       showToast('Punch IN first before taking a break!', 'error');
       return;
     }
@@ -330,7 +334,7 @@ export default function RiderAttendanceScreen() {
     return isOnline ? 0.5 : 0;
   };
 
-  const activeHoursDecimal = parseActiveHoursToDecimal(activeHoursStr, onShift);
+  const activeHoursDecimal = parseActiveHoursToDecimal(activeHoursStr, isOnline);
   const targetHours = 8.0;
   const percentCompleted = Math.min(100, Math.round((activeHoursDecimal / targetHours) * 100));
   const hoursRemaining = Math.max(0, targetHours - activeHoursDecimal).toFixed(1);

@@ -38,6 +38,8 @@ from .schemas import (
     ProductRequest,
     CategoryRequest,
     StatusRequest,
+    DeliveryStepRequest,
+    DeliveryOtpVerifyRequest,
     AssignOrderRequest,
     BulkAssignRequest,
     ManagedUser,
@@ -189,6 +191,7 @@ async def cache_get(key: str):
             return res
     return None
 
+<<<<<<< HEAD
 async def cache_set(key: str, value: any, ttl_seconds: int = 3600):
     """Store JSON serializable value in Redis cache with TTL."""
     val_str = json.dumps(value)
@@ -198,6 +201,20 @@ async def cache_set(key: str, value: any, ttl_seconds: int = 3600):
     except RedisUnavailable:
         # Keep serving reads/writes locally until Redis comes back.
         _local_cache_fallback[key] = value
+=======
+async def cache_set(key: str, value: any, ttl_seconds: int = 3600) -> bool:
+    """Store JSON serializable value in Redis cache with TTL. Returns False if Redis write failed."""
+    try:
+        val_str = json.dumps(value)
+        res = await redis_exec(["SET", key, val_str, "EX", ttl_seconds])
+        if res is None:
+            logging.error(f"Redis SET returned empty result for key={key}")
+            return False
+        return True
+    except Exception as err:
+        logging.error(f"Redis SET failed for key={key}: {err}")
+        return False
+>>>>>>> origin/main
 
 async def cache_del(key: str):
     """Remove key from Redis cache."""
@@ -303,6 +320,7 @@ async def resolve_postgres_order_id(order_id: str) -> str:
         short_suffix = short_suffix[1:]
     short_suffix = short_suffix.lower().strip()
 
+<<<<<<< HEAD
     # 2. Query Postgres for matching ID starting with short_suffix (customer app uses first 6 hex characters)
     async def _prefix_get():
         return await store.get("orders", {"id": f"ilike.{short_suffix}*", "select": "id"})
@@ -314,10 +332,16 @@ async def resolve_postgres_order_id(order_id: str) -> str:
     # 3. Query Postgres for matching ID ending with short_suffix
     async def _suffix_get():
         return await store.get("orders", {"id": f"ilike.*{short_suffix}", "select": "id"})
+=======
+    # 2. Query Postgres for matching ID ending with short_suffix (only for non-UUID formatted IDs e.g. GB-XXXXX)
+    if not is_valid_uuid(clean_id):
+        async def _suffix_get():
+            return await store.get("orders", {"id": f"ilike.*{short_suffix}", "select": "id"})
+>>>>>>> origin/main
 
-    s_rows, s_ok = await execute_with_retry(_suffix_get, max_attempts=2, base_delay=0.1, op_name="resolve_order_id_suffix", order_id=clean_id)
-    if s_ok and isinstance(s_rows, list) and len(s_rows) > 0 and s_rows[0].get("id"):
-        return str(s_rows[0]["id"])
+        s_rows, s_ok = await execute_with_retry(_suffix_get, max_attempts=2, base_delay=0.1, op_name="resolve_order_id_suffix", order_id=clean_id)
+        if s_ok and isinstance(s_rows, list) and len(s_rows) > 0 and s_rows[0].get("id"):
+            return str(s_rows[0]["id"])
 
     return clean_id
 
@@ -535,6 +559,13 @@ async def resolve_valid_rider_id(rider_id: str) -> str | None:
     
     return None
 
+# Verified live public.orders schema (PostgREST). Extra delivery fields live in Redis only.
+PG_ORDER_COLUMNS = {
+    "id", "customer_id", "seller_id", "delivery_agent_id", "store_id",
+    "delivery_address", "delivery_location", "status", "total", "created_at",
+    "workflow_step", "otp_verified", "otp_verified_at", "proof_photo_url",
+}
+
 async def idempotent_order_upsert(order_id: str, patch_data: dict, fallback_single: dict | None = None, op_name: str = "order_upsert"):
     """
     Idempotent status/assignment write into Postgres:
@@ -545,13 +576,8 @@ async def idempotent_order_upsert(order_id: str, patch_data: dict, fallback_sing
     5. If row does not exist, insert fallback row with retry.
     """
     real_id = await resolve_postgres_order_id(order_id)
-    safe_patch = dict(patch_data)
-    # Remove transient Redis-only offer/queue fields before patching Postgres
-    safe_patch.pop("offered_to_rider_id", None)
-    safe_patch.pop("offer_expires_at", None)
-    safe_patch.pop("rejected_by_rider_ids", None)
-    safe_patch.pop("rider_name", None)
-    safe_patch.pop("is_queued", None)
+    # public.orders columns only — Redis-only fields (offer, workflow, OTP proof) must not be sent to PostgREST
+    safe_patch = {k: v for k, v in dict(patch_data).items() if k in PG_ORDER_COLUMNS and k != "id"}
 
     if "delivery_agent_id" in safe_patch:
         if safe_patch["delivery_agent_id"]:
@@ -562,6 +588,9 @@ async def idempotent_order_upsert(order_id: str, patch_data: dict, fallback_sing
                 safe_patch.pop("delivery_agent_id", None)
         else:
             safe_patch["delivery_agent_id"] = None
+
+    if not safe_patch:
+        return True
 
     async def _patch_op():
         return await store.patch("orders", safe_patch, {"id": f"eq.{real_id}"})
@@ -598,10 +627,16 @@ async def idempotent_order_upsert(order_id: str, patch_data: dict, fallback_sing
         "total": total_val,
         "created_at": created_at_val
     }
+<<<<<<< HEAD
     if cust_id:
         db_insert["customer_id"] = cust_id
     if store_id:
         db_insert["store_id"] = store_id
+=======
+    for column in ("workflow_step", "otp_verified", "otp_verified_at", "proof_photo_url"):
+        if column in safe_patch:
+            db_insert[column] = safe_patch[column]
+>>>>>>> origin/main
     if rider_val:
         db_insert["delivery_agent_id"] = rider_val
 
@@ -610,6 +645,202 @@ async def idempotent_order_upsert(order_id: str, patch_data: dict, fallback_sing
 
     ins_res, ins_ok = await execute_with_retry(_insert_op, max_attempts=3, base_delay=0.2, op_name=f"{op_name}_insert", order_id=real_id)
     return bool(ins_ok and ins_res)
+
+ALLOWED_WORKFLOW_STEPS = {"REACH_STORE", "STORE_CHECKLIST", "EN_ROUTE", "OTP_DELIVERY"}
+WORKFLOW_STATUS_MAP = {
+    "STORE_CHECKLIST": "picked_up",
+    "EN_ROUTE": "out_for_delivery",
+}
+TERMINAL_ORDER_STATUSES = {"delivered", "cancelled", "failed_delivery", "returned"}
+
+def rider_payout_amount(order: dict) -> int:
+    total = float(order.get("total_amount") or order.get("total") or 0)
+    return max(30, round(total * 0.3))
+
+async def compute_rider_today_earnings(rider: dict) -> dict:
+    today_str = get_store_local_now().strftime("%Y-%m-%d")
+    keys = {str(rider.get("id") or "").strip(), str(rider.get("phone") or "").strip()}
+    keys = {k for k in keys if k}
+    combined = {}
+    pg_uuids = [k for k in keys if is_valid_uuid(k)]
+    if pg_uuids:
+        try:
+            db_orders = await store.get("orders", {
+                "delivery_agent_id": f"in.({','.join(pg_uuids)})",
+                "status": "eq.delivered",
+                "order": "created_at.desc",
+                "limit": 200
+            }) or []
+            if isinstance(db_orders, list):
+                for o in db_orders:
+                    oid = str(o.get("id") or "")
+                    if oid:
+                        combined[oid] = o
+        except Exception:
+            pass
+    for k in keys:
+        h = await cache_get(f"cloud:rider_history:{k}")
+        if isinstance(h, list):
+            for o in h:
+                oid = str(o.get("id") or o.get("orderId") or o.get("order_id") or "")
+                if oid and oid not in combined:
+                    combined[oid] = o
+    earnings = 0
+    count = 0
+    for o in combined.values():
+        ts = str(o.get("completedAtISO") or o.get("delivered_at") or o.get("completed_at") or o.get("created_at") or "")
+        if ts[:10] != today_str:
+            continue
+        count += 1
+        earnings += rider_payout_amount(o)
+    return {"todays_earnings": earnings, "completed_deliveries_today": count}
+
+async def expand_rider_identity_keys(user: dict) -> set[str]:
+    rider_id = str(user.get("sub") or user.get("id") or "").strip()
+    user_phone = str(user.get("phone") or "").strip()
+    valid_keys = {k for k in (rider_id, user_phone) if k}
+    if user_phone:
+        digits = "".join(filter(str.isdigit, user_phone))
+        if digits:
+            valid_keys.add(digits)
+            valid_keys.add(f"+{digits}")
+            if len(digits) >= 10:
+                valid_keys.add(digits[-10:])
+                valid_keys.add(f"+91{digits[-10:]}")
+    try:
+        users_local = load_users_db()
+        for u in users_local:
+            if not isinstance(u, dict):
+                continue
+            uid = str(u.get("id") or "").strip()
+            uph = str(u.get("phone") or "").strip()
+            if uid in valid_keys or uph in valid_keys:
+                if uid:
+                    valid_keys.add(uid)
+                if uph:
+                    valid_keys.add(uph)
+                    udigits = "".join(filter(str.isdigit, uph))
+                    if udigits:
+                        valid_keys.add(udigits)
+                        valid_keys.add(f"+{udigits}")
+    except Exception:
+        pass
+    return valid_keys
+
+def order_assigned_to_rider(order: dict, valid_keys: set[str]) -> bool:
+    assigned = str(order.get("delivery_agent_id") or "").strip()
+    if not assigned or assigned in ("None", "null"):
+        return False
+    if assigned in valid_keys:
+        return True
+    assigned_digits = "".join(filter(str.isdigit, assigned))
+    if not assigned_digits:
+        return False
+    for k in valid_keys:
+        k_digits = "".join(filter(str.isdigit, str(k)))
+        if not k_digits:
+            continue
+        if assigned_digits == k_digits:
+            return True
+        if len(assigned_digits) >= 10 and len(k_digits) >= 10 and assigned_digits[-10:] == k_digits[-10:]:
+            return True
+    return False
+
+async def load_merged_order(order_id: str) -> dict | None:
+    """Postgres is source of truth for status/assignment; Redis holds items, workflow, OTP proof."""
+    redis_order = None
+    try:
+        redis_order = await cache_get(f"cloud:order:{order_id}")
+    except Exception as err:
+        logging.warning(f"Cache get cloud:order:{order_id} failed: {err}")
+
+    if not redis_order or not isinstance(redis_order, dict):
+        list_orders = await cache_get("cloud:orders_list") or []
+        if isinstance(list_orders, list):
+            for o in list_orders:
+                if is_same_order_id(o.get("id") or o.get("rawId"), order_id):
+                    redis_order = o
+                    break
+
+    real_id = await resolve_postgres_order_id(order_id)
+    db_order = None
+    try:
+        db_rows = await store.get("orders", {"id": f"eq.{real_id}"})
+        if isinstance(db_rows, list) and db_rows:
+            db_order = db_rows[0]
+    except Exception as err:
+        logging.warning(f"Postgres get order {real_id} failed: {err}")
+
+    if not redis_order and not db_order:
+        return None
+
+    merged = dict(redis_order) if isinstance(redis_order, dict) else {}
+    if isinstance(db_order, dict):
+        merged["id"] = db_order.get("id") or merged.get("id") or real_id
+        merged["rawId"] = merged.get("rawId") or merged["id"]
+        merged["customer_id"] = db_order.get("customer_id") or merged.get("customer_id")
+        merged["store_id"] = db_order.get("store_id") or merged.get("store_id")
+        merged["delivery_address"] = db_order.get("delivery_address") or merged.get("delivery_address")
+        merged["total"] = db_order.get("total") if db_order.get("total") is not None else merged.get("total")
+        if merged.get("total") is not None and "total_amount" not in merged:
+            merged["total_amount"] = float(merged.get("total") or 0)
+        # Postgres wins for status and rider assignment
+        if db_order.get("status"):
+            merged["status"] = db_order["status"]
+        if db_order.get("delivery_agent_id"):
+            merged["delivery_agent_id"] = db_order["delivery_agent_id"]
+        elif "delivery_agent_id" not in merged:
+            merged["delivery_agent_id"] = None
+        for field in ("workflow_step", "otp_verified", "otp_verified_at", "proof_photo_url"):
+            if field in db_order and db_order[field] is not None:
+                merged[field] = db_order[field]
+    return merged
+
+async def sync_order_redis_state(order_id: str, order: dict, extra: dict, require_success: bool = False) -> bool:
+    if not isinstance(order, dict):
+        if require_success:
+            raise HTTPException(status_code=500, detail="Failed to persist delivery state in cache")
+        return False
+    order.update(extra)
+    oid = order.get("id") or order.get("rawId") or order_id
+    ok_single = await cache_set(f"cloud:order:{oid}", order, ttl_seconds=86400 * 30)
+    if str(oid) != str(order_id):
+        await cache_set(f"cloud:order:{order_id}", order, ttl_seconds=86400 * 30)
+
+    list_ok = True
+    fresh_orders = await cache_get("cloud:orders_list") or []
+    if isinstance(fresh_orders, list):
+        found = False
+        for o in fresh_orders:
+            if is_same_order_id(o.get("id") or o.get("rawId"), oid):
+                o.update(extra)
+                found = True
+        if not found and str(order.get("status") or "").lower() not in TERMINAL_ORDER_STATUSES:
+            fresh_orders.insert(0, order)
+        list_ok = await cache_set("cloud:orders_list", fresh_orders, ttl_seconds=86400 * 30)
+
+    canonical_phone, _ = normalize_phone(order.get("customer_phone"))
+    if canonical_phone:
+        for key_phone in [canonical_phone, "".join(filter(str.isdigit, str(order.get("customer_phone") or "")))]:
+            if not key_phone:
+                continue
+            cust_key = f"cloud:customer_orders:{key_phone}"
+            cust_orders = await cache_get(cust_key) or []
+            if isinstance(cust_orders, list):
+                for o in cust_orders:
+                    if is_same_order_id(o.get("id") or o.get("rawId"), oid):
+                        o.update(extra)
+                await cache_set(cust_key, cust_orders, ttl_seconds=86400 * 30)
+
+    rider_id = str(order.get("delivery_agent_id") or "").strip()
+    if rider_id:
+        await redis_exec(["DEL", f"cloud:rider_active:{rider_id}"])
+
+    success = bool(ok_single and list_ok)
+    if require_success and not success:
+        logging.error(f"Redis delivery-state write failed for order {order_id}")
+        raise HTTPException(status_code=500, detail="Failed to persist delivery state in cache")
+    return success
 
 # ==============================================================================
 # ROOT & HEALTH & UPLOADS
@@ -2411,6 +2642,112 @@ async def order_status(
 
     return {"status": "ok", "order_id": order_id, "new_status": body.status}
 
+@router.patch("/orders/{order_id}/verify-otp")
+async def verify_delivery_otp(order_id: str, body: DeliveryOtpVerifyRequest, user=Depends(require_roles("delivery_agent"))):
+    otp = str(body.otp or "").strip()
+    proof_photo_url = body.proof_photo_url
+    if not otp.isdigit() or len(otp) < 4:
+        raise HTTPException(status_code=400, detail="Invalid OTP request")
+
+    order = await load_merged_order(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    valid_keys = await expand_rider_identity_keys(user)
+    if not order_assigned_to_rider(order, valid_keys):
+        raise HTTPException(status_code=403, detail="Forbidden: You are not assigned to this order")
+
+    st = str(order.get("status") or "").lower()
+    if st in TERMINAL_ORDER_STATUSES:
+        raise HTTPException(status_code=409, detail="Order is already completed or cancelled")
+
+    expected_otp = None
+    if order.get("otp"):
+        expected_otp = str(order.get("otp")).strip()
+    elif order.get("delivery_otp"):
+        expected_otp = str(order.get("delivery_otp")).strip()
+    else:
+        clean_digits = "".join(filter(str.isdigit, str(order.get("customer_phone") or "")))
+        if len(clean_digits) >= 4:
+            expected_otp = clean_digits[-4:]
+
+    otp_ok = False
+    if expected_otp and otp == expected_otp:
+        otp_ok = True
+    elif settings().otp_debug and otp in ("1234", "123456"):
+        otp_ok = True
+    if not otp_ok:
+        raise HTTPException(status_code=400, detail="Invalid OTP! Please ask the customer for their delivery code.")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    redis_fields = {"otp_verified": True, "verified_at": now_iso}
+    if proof_photo_url:
+        redis_fields["proof_photo_url"] = proof_photo_url
+
+    pg_ok = await idempotent_order_upsert(
+        order_id,
+        {
+            "otp_verified": True,
+            "otp_verified_at": now_iso,
+            "proof_photo_url": proof_photo_url,
+        },
+        fallback_single=order,
+        op_name="verify_delivery_otp",
+    )
+    if not pg_ok:
+        raise HTTPException(status_code=500, detail="Failed to persist OTP verification")
+
+    await sync_order_redis_state(order_id, order, redis_fields, require_success=True)
+    await redis_publish("orders:status", {"order_id": order_id, "otp_verified": True})
+
+    return {
+        "success": True,
+        "order_id": order.get("id") or order_id,
+        "otp_verified": True,
+        "proof_photo_url": proof_photo_url
+    }
+
+@router.patch("/delivery/{order_id}/step")
+async def update_delivery_step(order_id: str, body: DeliveryStepRequest, user=Depends(require_roles("delivery_agent"))):
+    step = str(body.step or "").upper().strip()
+    if step not in ALLOWED_WORKFLOW_STEPS:
+        raise HTTPException(status_code=400, detail=f"Invalid workflow step. Allowed steps: {sorted(ALLOWED_WORKFLOW_STEPS)}")
+
+    order = await load_merged_order(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    valid_keys = await expand_rider_identity_keys(user)
+    if not order_assigned_to_rider(order, valid_keys):
+        raise HTTPException(status_code=403, detail="Forbidden: You are not assigned to this order")
+
+    st = str(order.get("status") or "").lower()
+    if st in TERMINAL_ORDER_STATUSES:
+        raise HTTPException(status_code=409, detail="Order is already completed or cancelled")
+
+    new_status = WORKFLOW_STATUS_MAP.get(step)
+    redis_fields = {"workflow_step": step}
+    pg_patch = {"workflow_step": step}
+    if new_status:
+        redis_fields["status"] = new_status
+        pg_patch["status"] = new_status
+
+    pg_ok = await idempotent_order_upsert(order_id, pg_patch, fallback_single=order, op_name="update_delivery_step")
+    if not pg_ok:
+        raise HTTPException(status_code=500, detail="Failed to persist delivery state")
+
+    await sync_order_redis_state(order_id, order, redis_fields, require_success=True)
+    current_status = new_status or str(order.get("status") or "out_for_delivery")
+    if new_status:
+        await redis_publish("orders:status", {"order_id": order_id, "status": new_status, "workflow_step": step})
+
+    return {
+        "success": True,
+        "order_id": order.get("id") or order_id,
+        "step": step,
+        "status": current_status
+    }
+
 # ==============================================================================
 # /delivery/
 # ==============================================================================
@@ -2915,7 +3252,7 @@ async def delivery_active_orders(include_offer: bool = Query(False), user=Depend
         if assigned_pg_uuids:
             assigned = await store.get("orders", {
                 "delivery_agent_id": f"in.({','.join(assigned_pg_uuids)})",
-                "status": "in.(pending,placed,confirmed,preparing,out_for_delivery,ready_for_pickup,ready,accepted,delivering)",
+                "status": "in.(pending,placed,confirmed,preparing,out_for_delivery,ready_for_pickup,ready,accepted,delivering,picked_up)",
                 "order": "created_at.asc",
                 "limit": 50
             }) or []
@@ -3632,9 +3969,11 @@ async def accept_delivery(order_id: str, user=Depends(require_roles("delivery_ag
         for u in users:
             if isinstance(u, dict) and u.get("role") == "delivery_agent":
                 uid = str(u.get("id") or u.get("phone") or "")
-                if uid == rider_id or str(u.get("phone")) == rider_id:
+                uph = str(u.get("phone") or "")
+                if uid == rider_id or uph == rider_id or (user_phone and uph == user_phone):
                     u["agent_status"] = "ON_DELIVERY"
                     u["is_online"] = True
+        save_users_db(users)
     if single and isinstance(single, dict):
         single["status"] = "out_for_delivery"
         single["delivery_agent_id"] = rider_id
@@ -4748,6 +5087,13 @@ async def get_rider_presence_status(user=Depends(require_roles("delivery_agent")
 
             if modified:
                 save_users_db(users)
+
+            try:
+                earnings = await compute_rider_today_earnings(target_user)
+                target_user["todays_earnings"] = earnings["todays_earnings"]
+                target_user["completed_deliveries_today"] = earnings["completed_deliveries_today"]
+            except Exception as err:
+                logging.warning(f"Failed to compute rider earnings: {err}")
 
             is_leave, l_type, l_title, l_note = check_is_today_leave(target_user, now)
             return {

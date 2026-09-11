@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, ScrollView, Pressable, Switch, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, Pressable, Switch, StyleSheet, ActivityIndicator, RefreshControl, Modal } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
-import { get, patch } from '../../services/api';
+import { get, post } from '../../services/api';
 import { DeliveryAgent } from '../../types';
 import { useToast } from '../../context/ToastContext';
+import { useRiderDuty } from '../../context/RiderDutyContext';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import {
   Bike,
@@ -25,8 +26,6 @@ import {
 } from 'lucide-react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 
-import { getItem, setItem } from '../../services/storage';
-
 interface ActiveOrder {
   id: string;
   orderNumber?: string;
@@ -41,63 +40,18 @@ interface ActiveOrder {
 export default function RiderDashboardScreen() {
   const router = useRouter();
   const { showToast } = useToast();
-  const [isOnline, setIsOnline] = useState<boolean>(() => {
-    try {
-      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
-        const local = localStorage.getItem('@grabit_rider_is_online');
-        if (local !== null) return local === 'true';
-      }
-    } catch {}
-    return false;
-  });
+  const { isOnline, toggleDuty, refreshDutyStatus, rider: ctxRider } = useRiderDuty();
   const [breakMode, setBreakMode] = useState(false);
   const [rider, setRider] = useState<DeliveryAgent | null>(null);
+
+  useEffect(() => {
+    if (ctxRider) setRider(ctxRider);
+  }, [ctxRider]);
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null);
+  const [pendingOffer, setPendingOffer] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [shiftMinutes, setShiftMinutes] = useState(0);
-
-  // Sync isOnline from AsyncStorage on mount and on status update events
-  useEffect(() => {
-    const syncStatus = () => {
-      getItem<string>('@grabit_rider_is_online')
-        .then((val) => {
-          if (val !== null) {
-            setIsOnline(val === 'true');
-          } else if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
-            const local = localStorage.getItem('@grabit_rider_is_online');
-            if (local !== null) setIsOnline(local === 'true');
-          }
-        })
-        .catch(() => {});
-    };
-
-    syncStatus();
-
-    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-      window.addEventListener('grabit_rider_online_updated', syncStatus);
-      return () => {
-        if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
-          window.removeEventListener('grabit_rider_online_updated', syncStatus);
-        }
-      };
-    }
-  }, []);
-
-  const saveOnlineState = useCallback((val: boolean) => {
-    setIsOnline(val);
-    setItem('@grabit_rider_is_online', String(val)).catch(() => {});
-    try {
-      if (typeof window !== 'undefined') {
-        if (typeof localStorage !== 'undefined' && localStorage.setItem) {
-          localStorage.setItem('@grabit_rider_is_online', String(val));
-        }
-        if (typeof window.dispatchEvent === 'function' && typeof Event === 'function') {
-          window.dispatchEvent(new Event('grabit_rider_online_updated'));
-        }
-      }
-    } catch {}
-  }, []);
 
   // Shift timer
   useEffect(() => {
@@ -115,25 +69,8 @@ export default function RiderDashboardScreen() {
 
   const fetchData = useCallback(async () => {
     try {
-      // Fetch rider profile
-      const riderRes = await get('/delivery/agent/me').catch(() => null);
-      if (riderRes) {
-        const u = riderRes.user || riderRes;
-        if (u && (u.id || u.phone)) {
-          setRider(u);
-          if (u.is_online !== undefined) {
-            saveOnlineState(Boolean(u.is_online));
-          }
-        }
-      } else {
-        const storedVal = await getItem<string>('@grabit_rider_is_online').catch(() => null);
-        if (storedVal === 'true') {
-          setIsOnline(true);
-        }
-      }
-
-      // Fetch active orders assigned to this rider
-      const activeRes = await get('/delivery/active').catch(() => null);
+      // Fetch active orders & pending offer for this rider
+      const activeRes = await get('/delivery/active?include_offer=true').catch(() => null);
       if (activeRes) {
         const orders = Array.isArray(activeRes) ? activeRes : (activeRes.orders || []);
         // Find the first active order assigned to this rider
@@ -142,6 +79,12 @@ export default function RiderDashboardScreen() {
           return st !== 'delivered' && st !== 'cancelled' && st !== 'failed_delivery';
         });
         setActiveOrder(active || null);
+
+        if (activeRes.pending_offer && activeRes.pending_offer.has_offer && activeRes.pending_offer.offer) {
+          setPendingOffer(activeRes.pending_offer.offer);
+        } else {
+          setPendingOffer(null);
+        }
       }
     } catch {
       // no-op — will show empty state
@@ -149,12 +92,39 @@ export default function RiderDashboardScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [saveOnlineState]);
+  }, []);
+
+  const handleAcceptOffer = async () => {
+    if (!pendingOffer) return;
+    const orderId = pendingOffer.id || pendingOffer.rawId;
+    try {
+      await post(`/delivery/${orderId}/accept`, {});
+      showToast('Order Accepted! Navigating to Active Task...', 'success');
+      setPendingOffer(null);
+      router.push('/rider/active' as any);
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to accept order', 'error');
+    }
+  };
+
+  const handleRejectOffer = async () => {
+    if (!pendingOffer) return;
+    const orderId = pendingOffer.id || pendingOffer.rawId;
+    try {
+      await post(`/delivery/${orderId}/reject`, {});
+      showToast('Offer rejected', 'info');
+      setPendingOffer(null);
+      fetchData();
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to reject offer', 'error');
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
       fetchData();
-    }, [fetchData])
+      refreshDutyStatus();
+    }, [fetchData, refreshDutyStatus])
   );
 
   useEffect(() => {
@@ -167,17 +137,12 @@ export default function RiderDashboardScreen() {
   const handleRefresh = () => {
     setRefreshing(true);
     fetchData();
+    refreshDutyStatus();
   };
 
   const handleToggleOnline = async (val: boolean) => {
-    saveOnlineState(val);
     if (!val) setBreakMode(false);
-    try {
-      await patch('/delivery/agent/status', { is_online: val });
-      await fetchData();
-    } catch {
-      // Optimistic update already done
-    }
+    await toggleDuty(val);
     showToast(
       val ? 'Duty Started! You are now receiving orders.' : 'Duty Offline. Order assignment paused.',
       val ? 'success' : 'info'
@@ -273,12 +238,6 @@ export default function RiderDashboardScreen() {
               <Text style={styles.headerSubtitle}>Indiranagar Zone • Shift A</Text>
             </View>
             <Text style={styles.headerTitle}>Daily Shift & Duty Punch</Text>
-          </View>
-          <View style={[styles.statusBadge, isOnline ? (breakMode ? styles.badgeBreak : styles.badgeOnline) : styles.badgeOffline]}>
-            <View style={[styles.badgeDot, { backgroundColor: isOnline ? (breakMode ? '#D97706' : '#10B981') : '#94A3B8' }]} />
-            <Text style={[styles.statusBadgeText, isOnline ? (breakMode ? styles.badgeBreakText : styles.badgeOnlineText) : styles.badgeOfflineText]}>
-              {isOnline ? (breakMode ? 'ON BREAK' : 'ON DUTY') : 'OFF DUTY'}
-            </Text>
           </View>
         </View>
 
@@ -460,6 +419,39 @@ export default function RiderDashboardScreen() {
           <Text style={styles.navSub}>KYC & Payouts</Text>
         </Pressable>
       </View>
+
+      {/* 6. PENDING OFFER POPUP MODAL */}
+      <Modal
+        visible={!!pendingOffer}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPendingOffer(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.offerCardModal}>
+            <View style={styles.offerHeader}>
+              <Zap size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.offerHeaderTitle}>NEW DELIVERY OFFER!</Text>
+            </View>
+
+            <View style={styles.offerBody}>
+              <Text style={styles.offerOrderTitle}>Order #{pendingOffer?.orderNumber || pendingOffer?.id || pendingOffer?.rawId || '—'}</Text>
+              <Text style={styles.offerPayout}>Payout: ₹{Math.max(30, Math.round(Number(pendingOffer?.total_amount || pendingOffer?.total || 0) * 0.3))}</Text>
+              <Text style={styles.offerSub}>Pickup: {pendingOffer?.store_name || 'Grabit Dark Store'}</Text>
+              <Text style={styles.offerSub}>Drop: {pendingOffer?.delivery_address || 'Customer Location'}</Text>
+
+              <View style={styles.offerBtnRow}>
+                <Pressable style={styles.rejectOfferBtn} onPress={handleRejectOffer}>
+                  <Text style={styles.rejectOfferText}>Reject</Text>
+                </Pressable>
+                <Pressable style={styles.acceptOfferBtn} onPress={handleAcceptOffer}>
+                  <Text style={styles.acceptOfferText}>ACCEPT OFFER</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -964,5 +956,95 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: COLORS.textMuted,
     marginTop: 2,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  offerCardModal: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  offerHeader: {
+    backgroundColor: '#0066FF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  offerHeaderTitle: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 15,
+    letterSpacing: 0.5,
+  },
+  offerBody: {
+    padding: 20,
+    alignItems: 'center',
+    gap: 8,
+  },
+  offerOrderTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#0F172A',
+  },
+  offerPayout: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#10B981',
+    marginBottom: 4,
+  },
+  offerSub: {
+    fontSize: 13,
+    color: '#475569',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  offerBtnRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+    width: '100%',
+  },
+  rejectOfferBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  rejectOfferText: {
+    color: '#475569',
+    fontWeight: '800',
+    fontSize: 14,
+  },
+  acceptOfferBtn: {
+    flex: 1.5,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  acceptOfferText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 14,
+    letterSpacing: 0.5,
   },
 });
