@@ -10,6 +10,9 @@ import {
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { get } from '../../services/api';
+import { getItem } from '../../services/storage';
+import { Order } from '../../types';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import {
   Zap,
@@ -36,8 +39,6 @@ import {
   Check,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { get } from '../../services/api';
-import { Order } from './orders';
 
 export default function SellerDashboardScreen() {
   const router = useRouter();

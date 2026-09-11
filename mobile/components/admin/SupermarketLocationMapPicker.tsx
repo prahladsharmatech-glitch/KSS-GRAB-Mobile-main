@@ -72,7 +72,7 @@ export const SupermarketLocationMapPicker: React.FC<SupermarketLocationMapPicker
   onSaveLocation,
   height = 360,
 }) => {
-  const mapRef = useRef<MapView>(null);
+  const mapRef = useRef<any>(null);
   const [coords, setCoords] = useState({ lat: initialLat, lng: initialLng });
   const [geofenceRadius, setGeofenceRadius] = useState(initialRadius);
   const [storeTitle, setStoreTitle] = useState(initialTitle);
@@ -267,7 +267,7 @@ export const SupermarketLocationMapPicker: React.FC<SupermarketLocationMapPicker
             title={storeTitle}
             description={resolvedAddress}
             draggable
-            onDragEnd={(e) => {
+            onDragEnd={(e: any) => {
               const { latitude, longitude } = e.nativeEvent.coordinate;
               const newLat = parseFloat(latitude.toFixed(6));
               const newLng = parseFloat(longitude.toFixed(6));

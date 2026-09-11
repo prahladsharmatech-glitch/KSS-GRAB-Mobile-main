@@ -48,7 +48,6 @@ export const ASSET_FILENAME_MAP: Record<string, string> = {
   'vip-gift-box-3d.png': 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067813/grabit_media/vip_gift_box_3d.png',
   'vip-gift-box-3d.jpg': 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067815/grabit_media/vip_gift_box_3d.jpg',
   'suggest-product-3d.png': 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067817/grabit_media/suggest_product_3d.png',
-  'banner-vip-savings.png': 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789066651/grabit_media/banner_vip_savings.png',
   'incentive_3d_trophy.png': 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067820/grabit_media/incentive_3d_trophy.png',
   'grabit-logo.png': 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067981/grabit_media/grabit_logo.png',
   'grabit_light_login_banner.jpg': 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067982/grabit_media/grabit_light_login_banner.jpg',
