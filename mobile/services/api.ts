@@ -4,7 +4,7 @@ import { UserProfile } from '../types';
 
 export function getApiBaseUrl(): string {
   if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
-  if (Platform.OS === 'web' || typeof window !== 'undefined') {
+  if (Platform.OS === 'web') {
     return 'http://localhost:8000/api';
   }
   // Physical Android/iOS device — use PC's local network IP (same Wi-Fi)
@@ -90,10 +90,31 @@ export async function getAuthToken(forceRefresh = false): Promise<string | null>
 
 // In-memory response cache for non-order GET operations
 const apiCache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL_MS = 15000;
+const CACHE_TTL_MS = 5000; // 5s — short TTL to keep data fresh
+
+// Paths that should ALWAYS bypass cache for real-time freshness
+const REALTIME_PATHS = new Set([
+  '/orders',
+  '/orders/',
+  '/store/orders',
+  '/store/orders/',
+  '/delivery/active',
+  '/delivery/active/',
+  '/delivery/stream',
+  '/delivery/assignments',
+]);
 
 export function clearApiCache() {
   apiCache.clear();
+}
+
+export function invalidateOrdersCache() {
+  // Invalidate all order-related cache keys
+  for (const key of apiCache.keys()) {
+    if (key.startsWith('/orders') || key.startsWith('/store/orders') || key.startsWith('/delivery')) {
+      apiCache.delete(key);
+    }
+  }
 }
 
 const SUPABASE_REST_URL = 'https://vhcmjwuhdcdxqmyjvqpz.supabase.co/rest/v1';
@@ -323,8 +344,9 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
 
   // RAM Cache lookup (15s for static endpoints, 2s deduplication on orders/live endpoints)
   if (isGet && !isDeliveryPath) {
+    const isRealtimePath = REALTIME_PATHS.has(cleanPath) || cleanPath.startsWith('/orders') || cleanPath.startsWith('/store/orders');
     const cached = apiCache.get(cleanPath);
-    const ttl = isOrderPath ? 2000 : CACHE_TTL_MS;
+    const ttl = (isRealtimePath || isOrderPath) ? 2000 : CACHE_TTL_MS;
     if (cached && Date.now() - cached.timestamp < ttl) {
       return cached.data as T;
     }

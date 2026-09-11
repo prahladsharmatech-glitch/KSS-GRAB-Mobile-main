@@ -65,6 +65,8 @@ class DeliveryStepRequest(BaseModel):
     step: str
 
 class DeliveryOtpVerifyRequest(BaseModel):
+    order_id: str | None = None
+    rider_id: str | None = None
     otp: str = Field(min_length=4, max_length=8)
     proof_photo_url: str | None = None
 

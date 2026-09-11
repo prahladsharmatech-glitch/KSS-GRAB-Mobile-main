@@ -15,7 +15,8 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useToast } from '../../context/ToastContext';
-import { get, patch, uploadImage } from '../../services/api';
+import { get, patch, uploadImage, invalidateOrdersCache } from '../../services/api';
+import { useRealtimeOrders } from '../../services/realtimeOrders';
 import { getItem, setItem, removeItem } from '../../services/storage';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import Svg, { Path } from 'react-native-svg';
@@ -128,51 +129,45 @@ export default function ActiveDeliveryScreen() {
     return () => clearInterval(interval);
   }, [order?.created_at]);
 
-  // Fetch active order assigned to this rider from backend
-  const fetchActiveOrder = useCallback(async () => {
-    try {
-      const res = await get('/delivery/active').catch(() => null);
-      if (res) {
-        const orders = Array.isArray(res) ? res : (res.orders || []);
-        const active = orders.find((o: any) => {
-          const st = String(o.status || '').toLowerCase();
-          return st !== 'delivered' && st !== 'cancelled' && st !== 'failed_delivery';
-        });
-        if (active) {
-          setOrder(active);
-          const orderId = active.rawId || active.id;
-          if (orderId) {
-            const savedStep = await getItem<string>(`grabit_rider_step_${orderId}`);
-            if (savedStep && typeof savedStep === 'string' && ['REACH_STORE', 'STORE_CHECKLIST', 'EN_ROUTE', 'ARRIVED', 'OTP_DELIVERY', 'COMPLETED'].includes(savedStep)) {
-              setCurrentStep(savedStep as StepState);
-            } else if (active.workflow_step) {
-              setCurrentStep(active.workflow_step as StepState);
-            }
-          }
-          // Build checklist from real items
-          const apiItems = active.items || active.order_items || [];
-          setItems(buildChecklistItems(apiItems));
-          // Estimate payout: 30% of order total as delivery fee, min ₹30
-          const total = Number(active.total_amount || active.total || 0);
-          setPayout(Math.max(30, Math.round(total * 0.3)));
-        } else {
-          setOrder(null);
-        }
-      } else {
-        setOrder(null);
-      }
-    } catch {
-      setOrder(null);
-    } finally {
-      setLoadingOrder(false);
-    }
-  }, []);
+  // Real-time active order via hook (SSE on web, 3s polling on native)
+  const {
+    orders: liveOrders,
+    loading: hookLoading,
+    isLive: ordersIsLive,
+    refresh: refreshActiveOrders,
+  } = useRealtimeOrders('rider');
 
+  // Derive active order from live data
   useEffect(() => {
-    fetchActiveOrder();
-    const interval = setInterval(fetchActiveOrder, 10000);
-    return () => clearInterval(interval);
-  }, [fetchActiveOrder]);
+    const activeFromLive = liveOrders.find((o: any) => {
+      const st = String(o.status || '').toLowerCase();
+      return st !== 'delivered' && st !== 'cancelled' && st !== 'failed_delivery';
+    }) || null;
+    setOrder(activeFromLive);
+    if (activeFromLive) {
+      const orderId = activeFromLive.rawId || activeFromLive.id;
+      if (orderId) {
+        getItem<string>(`grabit_rider_step_${orderId}`).then((savedStep) => {
+          if (savedStep && ['REACH_STORE', 'STORE_CHECKLIST', 'EN_ROUTE', 'ARRIVED', 'OTP_DELIVERY', 'COMPLETED'].includes(savedStep)) {
+            setCurrentStep(savedStep as StepState);
+          } else if (activeFromLive.workflow_step) {
+            setCurrentStep(activeFromLive.workflow_step as StepState);
+          }
+        }).catch(() => {});
+      }
+      const apiItems = activeFromLive.items || activeFromLive.order_items || [];
+      setItems(buildChecklistItems(apiItems));
+      const total = Number(activeFromLive.total_amount || activeFromLive.total || 0);
+      setPayout(Math.max(30, Math.round(total * 0.3)));
+    }
+    setLoadingOrder(hookLoading);
+  }, [liveOrders, hookLoading]);
+
+  // Keep fetchActiveOrder as alias for manual refresh button
+  const fetchActiveOrder = useCallback(() => {
+    invalidateOrdersCache();
+    refreshActiveOrders();
+  }, [refreshActiveOrders]);
 
   const advanceStep = async (nextStep: StepState) => {
     setCurrentStep(nextStep);

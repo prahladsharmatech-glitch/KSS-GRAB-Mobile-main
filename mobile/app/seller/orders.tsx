@@ -12,8 +12,9 @@ import {
   Share,
   Platform,
 } from 'react-native';
-import { get, post, patch } from '../../services/api';
+import { get, post, patch, invalidateOrdersCache } from '../../services/api';
 import { getItem, setItem, removeItem } from '../../services/storage';
+import { useRealtimeOrders } from '../../services/realtimeOrders';
 import { Order } from '../../types';
 export { Order };
 import { formatDisplayOrderId } from '../../utils/orderUtils';
@@ -85,11 +86,89 @@ type OrderTab = 'ALL' | 'PLACED' | 'PREPARING' | 'READY_FOR_PICKUP' | 'OUT_FOR_D
 
 export default function SellerOrdersScreen() {
   const { showToast } = useToast();
-  const [orders, setOrders] = useState<Order[]>([]);
+  // ── Real-time orders via SSE (web) or 3s polling (native) ──────────────────
+  const {
+    orders: liveOrders,
+    loading: liveLoading,
+    isLive,
+    refresh: refreshOrders,
+  } = useRealtimeOrders('seller');
+
+  // Map raw API orders to local Order shape, falling back to INITIAL_ORDERS
+  const normalizeOrders = useCallback((raw: any[]): Order[] => {
+    if (!raw || raw.length === 0) return INITIAL_ORDERS;
+    return raw.map((o: any, idx: number) => {
+      let rawItems: any[] = [];
+      if (Array.isArray(o.items) && o.items.length > 0) {
+        rawItems = o.items;
+      } else if (typeof o.items === 'string') {
+        try { rawItems = JSON.parse(o.items); } catch { rawItems = []; }
+      }
+
+      let normalizedItems = (Array.isArray(rawItems) ? rawItems : []).map((it: any, iIdx: number) => ({
+        id: String(it.id || it.product_id || `item-${iIdx}`),
+        name: String(it.name || it.product_name || 'Ordered Product'),
+        quantity: Number(it.quantity || it.qty || 1),
+        price: Number(it.price || it.unit_price || 0),
+        image: it.image || it.image_url || 'apples-real.jpg'
+      }));
+
+      const calculatedSub = normalizedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const totalVal = Number(o.total || o.total_amount || calculatedSub || 99);
+
+      const custPhone = String(o.customer_phone || o.phone || '').replace(/\D/g, '');
+      const last10 = custPhone.length >= 10 ? custPhone.slice(-10) : custPhone;
+      const formattedPhone = last10 ? `+91 ${last10}` : '+91 9360843281';
+
+      const rawCustName = String(o.customer_name || o.customerName || o.name || '').trim();
+      const validCustName = (!rawCustName || rawCustName.toLowerCase() === 'customer' || rawCustName.toLowerCase() === 'guest')
+        ? 'Akash'
+        : rawCustName;
+
+      if (normalizedItems.length === 0) {
+        normalizedItems = [{
+          id: 'item-1',
+          name: 'Fresh Grocery & Essentials Pack',
+          quantity: 1,
+          price: totalVal,
+          image: 'apples-real.jpg'
+        }];
+      }
+
+      return {
+        ...o,
+        id: formatDisplayOrderId(o),
+        rawId: String(o.rawId || o.id || ''),
+        customer_name: validCustName,
+        customer_phone: formattedPhone,
+        address: String(o.delivery_address || o.address || 'KSS Metro Tech Park, Sector 4, Bengaluru'),
+        delivery_address: String(o.delivery_address || o.address || 'KSS Metro Tech Park, Sector 4, Bengaluru'),
+        status: String(o.status || 'PLACED').toUpperCase() as Order['status'],
+        items: normalizedItems,
+        subtotal: calculatedSub || totalVal,
+        delivery_fee: Number(o.delivery_fee || 0),
+        discount: Number(o.discount || 0),
+        total: totalVal,
+        payment_method: String(o.payment_method || 'UPI').toUpperCase(),
+        payment_status: String(o.payment_status || 'PAID').toUpperCase(),
+      };
+    });
+  }, []);
+
+  const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
   const [activeTab, setActiveTab] = useState<OrderTab>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [fleetRiders, setFleetRiders] = useState<FleetRider[]>(FLEET_RIDERS);
   const [loading, setLoading] = useState(false);
+
+  // Sync live orders into local state whenever they change
+  useEffect(() => {
+    if (liveOrders && liveOrders.length > 0) {
+      const normalized = normalizeOrders(liveOrders);
+      setOrders(normalized);
+    }
+    setLoading(liveLoading);
+  }, [liveOrders, liveLoading, normalizeOrders]);
 
   // Packing Slip & Reassign Modal State
   const [selectedPackingSlip, setSelectedPackingSlip] = useState<Order | null>(null);
@@ -97,114 +176,22 @@ export default function SellerOrdersScreen() {
 
   // Fetch real orders from backend with fallback
   const fetchOrdersSilent = useCallback(async () => {
+    refreshOrders();
     try {
       const res = await get('/store/orders');
       let apiOrders: Order[] = [];
       const listData = Array.isArray(res) ? res : (Array.isArray(res?.orders) ? res.orders : []);
       if (listData.length > 0) {
-        apiOrders = listData.map((o: any, idx: number) => {
-          let rawItems: any[] = [];
-          if (Array.isArray(o.items) && o.items.length > 0) {
-            rawItems = o.items;
-          } else if (typeof o.items === 'string') {
-            try { rawItems = JSON.parse(o.items); } catch { rawItems = []; }
-          }
-
-          let normalizedItems = (Array.isArray(rawItems) ? rawItems : []).map((it: any, iIdx: number) => ({
-            id: String(it.id || it.product_id || `item-${iIdx}`),
-            name: String(it.name || it.product_name || 'Ordered Product'),
-            quantity: Number(it.quantity || it.qty || 1),
-            price: Number(it.price || it.unit_price || 0),
-            image: it.image || it.image_url || 'apples-real.jpg'
-          }));
-
-          const calculatedSub = normalizedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-          const totalVal = Number(o.total || o.total_amount || calculatedSub || 99);
-
-          const custPhone = String(o.customer_phone || o.phone || '').replace(/\D/g, '');
-          const last10 = custPhone.length >= 10 ? custPhone.slice(-10) : custPhone;
-          const formattedPhone = last10 ? `+91 ${last10}` : '+91 9360843281';
-
-          const rawCustName = String(o.customer_name || o.customerName || o.name || '').trim();
-          const validCustName = (!rawCustName || rawCustName.toLowerCase() === 'customer' || rawCustName.toLowerCase() === 'guest')
-            ? 'Akash'
-            : rawCustName;
-
-          if (normalizedItems.length === 0) {
-            normalizedItems = [{
-              id: 'item-1',
-              name: 'Fresh Grocery & Essentials Pack',
-              quantity: 1,
-              price: totalVal,
-              image: 'apples-real.jpg'
-            }];
-          }
-
-          return {
-            ...o,
-            id: formatDisplayOrderId(o),
-            rawId: String(o.rawId || o.id || ''),
-            customer_name: validCustName,
-            customer_phone: formattedPhone,
-            address: String(o.delivery_address || o.address || 'KSS Metro Tech Park, Sector 4, Bengaluru'),
-            delivery_address: String(o.delivery_address || o.address || 'KSS Metro Tech Park, Sector 4, Bengaluru'),
-            status: String(o.status || 'PLACED').toUpperCase() as Order['status'],
-            items: normalizedItems,
-            subtotal: calculatedSub || totalVal,
-            delivery_fee: Number(o.delivery_fee || 0),
-            discount: Number(o.discount || 0),
-            total: totalVal,
-            payment_method: String(o.payment_method || 'UPI').toUpperCase(),
-            payment_status: String(o.payment_status || 'PAID').toUpperCase(),
-          };
-        });
+        apiOrders = normalizeOrders(listData);
+        setOrders(apiOrders);
+        await setItem('grabit_seller_orders', apiOrders).catch(() => {});
       }
-
-      const cached = (await getItem<Order[]>('grabit_seller_orders').catch(() => [])) || [];
-      const combined = [...apiOrders];
-      const cachedMap = new Map<string, any>();
-      if (Array.isArray(cached)) {
-        cached.forEach((co) => {
-          if (co && (co.id || co.rawId)) {
-            const k1 = String(co.id || '');
-            const k2 = String(co.rawId || '');
-            if (k1) cachedMap.set(k1, co);
-            if (k2) cachedMap.set(k2, co);
-          }
-        });
-      }
-
-      // Merge real items from local storage if API returned dummy fallback items
-      combined.forEach((ao: any) => {
-        const matchingCached = cachedMap.get(ao.id) || cachedMap.get(ao.rawId);
-        const hasDummyItems = !ao.items || ao.items.length === 0 || ao.items.every((it: any) => it.name === 'Fresh Grocery & Essentials Pack' || it.name === 'Ordered Product');
-        if (matchingCached && matchingCached.items && matchingCached.items.length > 0 && hasDummyItems) {
-          const validRealItems = matchingCached.items.filter((it: any) => it.name !== 'Fresh Grocery & Essentials Pack');
-          if (validRealItems.length > 0) {
-            ao.items = validRealItems;
-          }
-        }
-      });
-
-      const seenIds = new Set(combined.map((o) => o.id || o.rawId));
-      if (Array.isArray(cached)) {
-        for (const co of cached) {
-          const cid = co.id || co.rawId;
-          if (cid && !seenIds.has(cid)) {
-            seenIds.add(cid);
-            combined.push(co);
-          }
-        }
-      }
-
-      setOrders(combined);
-      await setItem('grabit_seller_orders', combined).catch(() => {});
     } catch {
-      // Retain existing live fetched orders or empty state
+      // Retain existing live fetched orders
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [refreshOrders, normalizeOrders]);
 
   // Fetch real riders from backend with fallback
   const fetchRiders = useCallback(async () => {
@@ -228,17 +215,15 @@ export default function SellerOrdersScreen() {
     }
   }, []);
 
+  // Fetch riders once on mount & cache init
   useEffect(() => {
     getItem<Order[]>('grabit_seller_orders').then((cached) => {
       if (cached && Array.isArray(cached) && cached.length > 0) {
-        setOrders(cached);
+        setOrders((prev) => (prev.length > 0 ? prev : cached));
       }
     }).catch(() => {});
     fetchOrdersSilent();
     fetchRiders();
-    // Refresh every 10s (API cache is 5s, so polling faster than that is pointless)
-    const interval = setInterval(() => { fetchOrdersSilent(); fetchRiders(); }, 10000);
-    return () => clearInterval(interval);
   }, [fetchOrdersSilent, fetchRiders]);
 
   const handlePurgeAllOrders = async () => {
@@ -247,6 +232,8 @@ export default function SellerOrdersScreen() {
       await post('/orders/purge-all', {});
       setOrders([]);
       await removeItem('grabit_seller_orders').catch(() => {});
+      invalidateOrdersCache();
+      refreshOrders();
       showToast('All test orders deleted from database & portal', 'success');
     } catch (err: any) {
       showToast(err?.message || 'Failed to purge test orders', 'error');
@@ -267,6 +254,7 @@ export default function SellerOrdersScreen() {
 
     try {
       await patch(`/orders/${encodeURIComponent(orderId)}/status`, { status: newStatus.toLowerCase() });
+      invalidateOrdersCache();
     } catch (err: any) {
       if (previousOrders.length > 0) {
         setOrders(previousOrders);
@@ -692,6 +680,14 @@ export default function SellerOrdersScreen() {
         <View style={styles.titleRow}>
           <ShoppingBag size={22} color={COLORS.primary} style={{ marginRight: 8 }} />
           <Text style={styles.headerTitle}>Live Orders ({orders.length})</Text>
+          {/* Live indicator dot */}
+          <View style={[
+            styles.liveDot,
+            { backgroundColor: isLive ? '#10B981' : '#F59E0B' }
+          ]} />
+          <Text style={[styles.liveLabel, { color: isLive ? '#10B981' : '#F59E0B' }]}>
+            {isLive ? 'LIVE' : 'SYNC'}
+          </Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
           <Pressable
@@ -702,7 +698,7 @@ export default function SellerOrdersScreen() {
             <Text style={{ color: '#DC2626', fontSize: 11, fontWeight: '700' }}>Clear Test Orders</Text>
           </Pressable>
           <Pressable style={[styles.refreshBtn, { padding: 6 }]} onPress={fetchOrdersSilent}>
-            <Clock size={16} color={COLORS.primary} />
+            <RefreshCw size={16} color={COLORS.primary} />
           </Pressable>
         </View>
       </View>
@@ -1108,6 +1104,18 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
     color: COLORS.text,
+  },
+  liveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    marginLeft: 8,
+  },
+  liveLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    marginLeft: 3,
+    letterSpacing: 0.5,
   },
   refreshBtn: {
     padding: 8,

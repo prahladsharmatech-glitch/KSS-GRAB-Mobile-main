@@ -34,9 +34,9 @@ import {
   Check,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { patch } from '../../services/api';
+import { get, patch } from '../../services/api';
 import { getItem, setItem } from '../../services/storage';
-import { Address } from '../../types';
+import { Address, UserProfile } from '../../types';
 
 export default function ProfilePage() {
   const router = useRouter();
