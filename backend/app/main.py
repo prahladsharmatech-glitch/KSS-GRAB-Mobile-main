@@ -546,7 +546,6 @@ async def resolve_valid_rider_id(rider_id: str) -> str | None:
 PG_ORDER_COLUMNS = {
     "id", "customer_id", "seller_id", "delivery_agent_id", "store_id",
     "delivery_address", "delivery_location", "status", "total", "created_at",
-    "workflow_step", "otp_verified", "otp_verified_at", "proof_photo_url",
 }
 
 async def idempotent_order_upsert(order_id: str, patch_data: dict, fallback_single: dict | None = None, op_name: str = "order_upsert"):
@@ -2633,13 +2632,13 @@ async def verify_delivery_otp(order_id: str, body: DeliveryOtpVerifyRequest, use
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    valid_keys = await expand_rider_identity_keys(user)
-    if not order_assigned_to_rider(order, valid_keys):
-        raise HTTPException(status_code=403, detail="Forbidden: You are not assigned to this order")
-
     st = str(order.get("status") or "").lower()
     if st in TERMINAL_ORDER_STATUSES:
         raise HTTPException(status_code=409, detail="Order is already completed or cancelled")
+
+    valid_keys = await expand_rider_identity_keys(user)
+    if not order_assigned_to_rider(order, valid_keys):
+        raise HTTPException(status_code=403, detail="Forbidden: You are not assigned to this order")
 
     expected_otp = None
     if order.get("otp"):
@@ -2697,13 +2696,13 @@ async def update_delivery_step(order_id: str, body: DeliveryStepRequest, user=De
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    valid_keys = await expand_rider_identity_keys(user)
-    if not order_assigned_to_rider(order, valid_keys):
-        raise HTTPException(status_code=403, detail="Forbidden: You are not assigned to this order")
-
     st = str(order.get("status") or "").lower()
     if st in TERMINAL_ORDER_STATUSES:
         raise HTTPException(status_code=409, detail="Order is already completed or cancelled")
+
+    valid_keys = await expand_rider_identity_keys(user)
+    if not order_assigned_to_rider(order, valid_keys):
+        raise HTTPException(status_code=403, detail="Forbidden: You are not assigned to this order")
 
     new_status = WORKFLOW_STATUS_MAP.get(step)
     redis_fields = {"workflow_step": step}

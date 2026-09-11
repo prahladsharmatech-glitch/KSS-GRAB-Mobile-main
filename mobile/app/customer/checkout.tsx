@@ -455,6 +455,8 @@ export default function CheckoutPage() {
     //    The auto-redirect useEffect fires 1.5s after setOrderPlaced(true).
     //    If setOrderPlaced fires before this fetch completes, the component unmounts,
     //    the AbortController kills the in-flight fetch, and the seller NEVER gets the order.
+    let backendRejected = false;
+    let backendRejectionMsg = '';
     try {
       const apiCallPromise = post('/orders/', {
         id: rawId,
@@ -515,9 +517,37 @@ export default function CheckoutPage() {
           } catch {}
         }
       }
-    } catch (err) {
-      // Backend unreachable — order is saved locally, user can still see it in My Orders
-      if (__DEV__) console.log('[Checkout] Backend sync failed, order saved locally:', (err as any)?.message || err);
+    } catch (err: any) {
+      const errMsg: string = (err as any)?.message || '';
+      const isBackendError: boolean = (err as any)?.isBackendError === true;
+
+      if (isBackendError) {
+        // Backend explicitly rejected the order (out of stock, validation error, etc.)
+        // Clean up the draft we already saved locally and abort
+        backendRejected = true;
+        backendRejectionMsg = errMsg || 'Order could not be placed. Please try again.';
+        for (const k of Array.from(keysToSave)) {
+          try {
+            const existing = (await getItem<any[]>(k).catch(() => [])) || [];
+            const cleaned = existing.filter(
+              (o) => o && o.id !== rawId && o.rawId !== rawId && o.displayId !== orderNum && o.order_number !== orderNum
+            );
+            await setItem(k, cleaned);
+          } catch {}
+        }
+      } else {
+        // Network error — order is saved locally, user can still see it in My Orders
+        if (__DEV__) console.log('[Checkout] Backend sync failed, order saved locally:', errMsg || err);
+      }
+    }
+
+    // If backend rejected the order, abort — show error to user and reset state
+    if (backendRejected) {
+      console.timeEnd('PlaceOrder total');
+      setIsSubmitting(false);
+      isPlacingRef.current = false;
+      showToast(backendRejectionMsg, 'error');
+      return;
     }
 
     // 5. Only NOW show the success screen — backend sync is done, redirect is safe
