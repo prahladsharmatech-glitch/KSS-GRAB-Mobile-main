@@ -39,6 +39,13 @@ class StatusRequest(BaseModel):
     status: str
     delivery_agent_id: str | None = None
 
+class DeliveryStepRequest(BaseModel):
+    step: str
+
+class DeliveryOtpVerifyRequest(BaseModel):
+    otp: str = Field(min_length=4, max_length=8)
+    proof_photo_url: str | None = None
+
 class AssignOrderRequest(BaseModel):
     delivery_agent_id: str
     rider_name: str | None = None

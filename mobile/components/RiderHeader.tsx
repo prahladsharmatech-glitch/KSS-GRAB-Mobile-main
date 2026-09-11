@@ -1,127 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
-import { COLORS, SPACING, SHADOWS } from '../constants/theme';
+import { COLORS, SPACING } from '../constants/theme';
 import { Bell } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { get, patch } from '../services/api';
+import { useRiderDuty } from '../context/RiderDutyContext';
 
-import { getItem, setItem } from '../services/storage';
-
-interface RiderHeaderProps {
-  statusText?: string;
-  partnerId?: string;
-  onStatusPress?: () => void;
-}
-
-export const RiderHeader: React.FC<RiderHeaderProps> = ({
-  statusText,
-  partnerId,
-  onStatusPress,
-}) => {
+export const RiderHeader: React.FC = () => {
   const router = useRouter();
-  const [dutyState, setDutyState] = useState<'ON_DELIVERY' | 'ONLINE' | 'OFFLINE'>(() => {
-    try {
-      if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
-        const local = localStorage.getItem('@grabit_rider_is_online');
-        if (local === 'true') return 'ONLINE';
-      }
-    } catch {}
-    return 'OFFLINE';
-  });
-  const [partnerCode, setPartnerCode] = useState<string>(partnerId || 'RDR-700B');
+  const { dutyStatus } = useRiderDuty();
 
-  const fetchProfile = React.useCallback(() => {
-    get('/delivery/agent/me')
-      .then((res: any) => {
-        if (res) {
-          const u = res.user || res;
-          const code = u.partner_id || u.partnerId || u.agentId || u.id || '';
-          if (code) {
-            const cleanCode = String(code).replace(/-/g, '').slice(-4).toUpperCase();
-            setPartnerCode(code.startsWith('RDR-') ? code : `RDR-${cleanCode}`);
-          }
-          const isOnline = Boolean(u.is_online);
-          const activeCount = Number(u.active_deliveries_count || 0);
-          setItem('@grabit_rider_is_online', String(isOnline)).catch(() => {});
-          try {
-            if (typeof window !== 'undefined' && typeof localStorage !== 'undefined' && localStorage.setItem) {
-              localStorage.setItem('@grabit_rider_is_online', String(isOnline));
-            }
-          } catch {}
-          if (activeCount > 0) {
-            setDutyState('ON_DELIVERY');
-          } else if (isOnline) {
-            setDutyState('ONLINE');
-          } else {
-            setDutyState('OFFLINE');
-          }
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (partnerId) {
-      setPartnerCode(partnerId);
-    }
-    fetchProfile();
-
-    getItem<string>('@grabit_rider_is_online')
-      .then((val) => {
-        if (val === 'true') {
-          setDutyState((prev) => (prev === 'ON_DELIVERY' ? 'ON_DELIVERY' : 'ONLINE'));
-        } else if (val === 'false') {
-          setDutyState('OFFLINE');
-        }
-      })
-      .catch(() => {});
-
-    const handleUpdate = () => {
-      try {
-        if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
-          const local = localStorage.getItem('@grabit_rider_is_online');
-          if (local === 'true') {
-            setDutyState((prev) => (prev === 'ON_DELIVERY' ? 'ON_DELIVERY' : 'ONLINE'));
-          } else if (local === 'false') {
-            setDutyState('OFFLINE');
-          }
-        }
-      } catch {}
-    };
-
-    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-      window.addEventListener('grabit_rider_online_updated', handleUpdate);
-      return () => {
-        if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
-          window.removeEventListener('grabit_rider_online_updated', handleUpdate);
-        }
-      };
-    }
-  }, [partnerId, fetchProfile]);
-
-  const currentStatus = statusText || (dutyState === 'ON_DELIVERY' ? 'On Delivery' : dutyState === 'ONLINE' ? 'Duty Online' : 'Offline');
-
-  const handleStatusToggle = async () => {
-    if (onStatusPress) {
-      onStatusPress();
-      return;
-    }
-    const nextState = dutyState === 'OFFLINE';
-    setDutyState(nextState ? 'ONLINE' : 'OFFLINE');
-    try {
-      if (typeof window !== 'undefined') {
-        if (typeof localStorage !== 'undefined' && localStorage.setItem) {
-          localStorage.setItem('@grabit_rider_is_online', String(nextState));
-        }
-        if (typeof window.dispatchEvent === 'function' && typeof Event === 'function') {
-          window.dispatchEvent(new Event('grabit_rider_online_updated'));
-        }
-      }
-      await patch('/delivery/agent/status', { is_online: nextState });
-    } catch {
-      setDutyState(dutyState);
-    }
-  };
+  const currentStatus =
+    dutyStatus === 'ON_DELIVERY'
+      ? 'On Delivery'
+      : dutyStatus === 'ONLINE'
+        ? 'Duty Online'
+        : 'Offline';
 
   return (
     <View style={styles.headerContainer}>
@@ -138,8 +31,8 @@ export const RiderHeader: React.FC<RiderHeaderProps> = ({
 
       {/* Right: Duty Pill & Notification Bell */}
       <View style={styles.rightRow}>
-        {/* Status Pill */}
-        <Pressable style={[styles.statusPill, currentStatus === 'Offline' && styles.statusPillOffline]} onPress={handleStatusToggle}>
+        {/* Status Pill (Display only - non-clickable) */}
+        <View style={[styles.statusPill, currentStatus === 'Offline' && styles.statusPillOffline]}>
           <View
             style={[
               styles.statusDot,
@@ -149,7 +42,7 @@ export const RiderHeader: React.FC<RiderHeaderProps> = ({
           <Text style={[styles.statusText, currentStatus === 'Offline' && styles.statusTextOffline]}>
             {currentStatus}
           </Text>
-        </Pressable>
+        </View>
 
         {/* Bell Button */}
         <Pressable

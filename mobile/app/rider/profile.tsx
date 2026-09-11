@@ -19,11 +19,13 @@ import {
 } from 'lucide-react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useToast } from '../../context/ToastContext';
+import { useRiderDuty } from '../../context/RiderDutyContext';
 
 export default function RiderProfileScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const { showToast } = useToast();
+  const { cleanupOnLogout } = useRiderDuty();
 
   const [rider, setRider] = useState<any>(null);
   const [upiId, setUpiId] = useState('');
@@ -60,6 +62,8 @@ export default function RiderProfileScreen() {
   }, [fetchProfile]);
 
   const handleLogout = async () => {
+    // End shift and clean up duty state before logging out
+    await cleanupOnLogout();
     await logout();
     showToast('Logged out of Rider Portal', 'info');
     router.replace('/login' as any);
@@ -87,7 +91,7 @@ export default function RiderProfileScreen() {
   const phoneLast4 = phoneDigits.length >= 4 ? phoneDigits.slice(-4) : '9903';
   const licenseNo = rider?.license_number || rider?.license_plate || rider?.driving_license || 'DL-2024-88712';
   const vehiclePlate = rider?.plate_number || rider?.vehicle_number || rider?.plate || 'KA-05-EX-9921';
-  const emergencyName = rider?.emergency_name || `${riderName.split(' ')[0]}'s Emergency Contact (Family)`;
+  const emergencyName = rider?.emergency_name || `${riderName.split(' ')[0]} (Family Contact)`;
   const emergencyPhone = rider?.emergency_phone || rider?.phone || user?.phone || '+91 99999 00003';
 
   return (
@@ -299,16 +303,21 @@ const styles = StyleSheet.create({
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 4,
+    alignItems: 'center',
+    paddingVertical: 5,
+    gap: 12,
   },
   infoLabel: {
     fontSize: 13,
     color: COLORS.textMuted,
+    flexShrink: 0,
   },
   infoVal: {
     fontSize: 13,
     fontWeight: '700',
     color: COLORS.text,
+    textAlign: 'right',
+    flex: 1,
   },
   docRow: {
     flexDirection: 'row',
