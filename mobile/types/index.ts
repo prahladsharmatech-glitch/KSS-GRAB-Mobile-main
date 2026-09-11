@@ -85,6 +85,7 @@ export interface Order {
   payment_method: 'COD' | 'UPI' | 'CARD';
   payment_status: 'PENDING' | 'COMPLETED' | 'FAILED';
   rider_id?: string;
+  delivery_agent_id?: string;
   rider_name?: string;
   rider_phone?: string;
   rider_latitude?: number;
