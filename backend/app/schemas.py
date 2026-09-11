@@ -7,16 +7,25 @@ class VerifyOtpRequest(PhoneRequest): otp: str = Field(pattern=r"^\d{6}$"); full
 class CartSyncRequest(BaseModel): phone: str; items: list
 class CartItemRequest(BaseModel): product_id: str; quantity: int = Field(ge=1, le=50)
 class OrderRequest(BaseModel):
+    id: str | None = None
+    rawId: str | None = None
+    display_id: str | None = None
+    displayId: str | None = None
+    order_number: str | None = None
+    orderNumber: str | None = None
     store_id: str | None = None
     delivery_address: str | None = "Delivery Address"
     latitude: float | None = 12.9716
     longitude: float | None = 77.5946
     items: list | None = []
-    total_amount: float | None = 0.0
+    total_amount: float | None = None
+    total: float | None = None
     customer_name: str | None = None
     customer_phone: str | None = None
     payment_method: str | None = "UPI"
     status: str | None = "placed"
+    coupon: str | None = None
+    coupon_code: str | None = None
 class ProductRequest(BaseModel):
     name: str
     price: float = Field(gt=0)
@@ -35,8 +44,21 @@ class CategoryRequest(BaseModel):
     name: str
     image_url: str | None = None
 
+from enum import Enum
+
+class OrderStatus(str, Enum):
+    PLACED = "placed"
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    PREPARING = "preparing"
+    OUT_FOR_DELIVERY = "out_for_delivery"
+    DELIVERED = "delivered"
+    CANCELLED = "cancelled"
+    RETURNED = "returned"
+    FAILED_DELIVERY = "failed_delivery"
+
 class StatusRequest(BaseModel):
-    status: str
+    status: OrderStatus | str
     delivery_agent_id: str | None = None
 
 class DeliveryStepRequest(BaseModel):

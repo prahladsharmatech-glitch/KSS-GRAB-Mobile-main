@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { Product } from '../types';
 import { getItem, setItem } from '../services/storage';
 
@@ -14,29 +14,42 @@ export const WishlistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [wishlist, setWishlist] = useState<Product[]>([]);
 
   useEffect(() => {
-    loadWishlist();
+    let isMounted = true;
+    getItem<Product[]>('grabit_wishlist').then((saved) => {
+      if (isMounted && saved && Array.isArray(saved)) {
+        setWishlist(saved);
+      }
+    }).catch(() => {});
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  const loadWishlist = async () => {
-    const saved = await getItem<Product[]>('grabit_wishlist');
-    if (saved && Array.isArray(saved)) setWishlist(saved);
-  };
+  const toggleWishlist = useCallback((product: Product) => {
+    const pIdStr = String(product.id);
+    setWishlist((prev) => {
+      let updated: Product[];
+      if (prev.some((p) => String(p.id) === pIdStr)) {
+        updated = prev.filter((p) => String(p.id) !== pIdStr);
+      } else {
+        updated = [...prev, product];
+      }
+      setItem('grabit_wishlist', updated);
+      return updated;
+    });
+  }, []);
 
-  const toggleWishlist = async (product: Product) => {
-    let updated: Product[];
-    if (wishlist.some((p) => p.id === product.id)) {
-      updated = wishlist.filter((p) => p.id !== product.id);
-    } else {
-      updated = [...wishlist, product];
-    }
-    setWishlist(updated);
-    await setItem('grabit_wishlist', updated);
-  };
+  const wishlistIdSet = useMemo(() => new Set(wishlist.map((p) => String(p.id))), [wishlist]);
+  const isInWishlist = useCallback((productId: string) => wishlistIdSet.has(String(productId)), [wishlistIdSet]);
 
-  const isInWishlist = (productId: string) => wishlist.some((p) => p.id === productId);
+  const value = useMemo(() => ({
+    wishlist,
+    toggleWishlist,
+    isInWishlist
+  }), [wishlist, toggleWishlist, isInWishlist]);
 
   return (
-    <WishlistContext.Provider value={{ wishlist, toggleWishlist, isInWishlist }}>
+    <WishlistContext.Provider value={value}>
       {children}
     </WishlistContext.Provider>
   );

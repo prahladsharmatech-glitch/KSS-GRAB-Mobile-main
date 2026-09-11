@@ -26,27 +26,9 @@ import {
 import { SearchAutocomplete } from '../../components/SearchAutocomplete';
 import { CustomerTopHeader } from '../../components/CustomerTopHeader';
 
-const LOCAL_CATEGORY_IMAGES: Record<string, any> = {
-  'coca-cola-real.jpg': require('../../assets/coca-cola-real.jpg'),
-  'aashirvaad-atta-real.jpg': require('../../assets/aashirvaad-atta-real.jpg'),
-  'amul-butter-real.jpg': require('../../assets/amul-butter-real.jpg'),
-  'combo-munchies.jpg': require('../../assets/combo-munchies.jpg'),
-  'cadbury-silk-real.jpg': require('../../assets/cadbury-silk-real.jpg'),
-  'dettol-handwash-real.jpg': require('../../assets/dettol-handwash-real.jpg'),
-  'fortune-oil-real.jpg': require('../../assets/fortune-oil-real.jpg'),
-  'apples-real.jpg': require('../../assets/apples-real.jpg'),
-  'deal-banner-household.jpg': require('../../assets/deal-banner-household.jpg'),
-};
-
 const getCatImgSource = (imgStr?: string) => {
   if (!imgStr || typeof imgStr !== 'string') return { uri: DEFAULT_FALLBACK_IMAGE };
   const clean = getValidImage(imgStr);
-  if (clean === DEFAULT_FALLBACK_IMAGE) return { uri: DEFAULT_FALLBACK_IMAGE };
-
-  const filename = clean.split('/').pop()?.split('?')[0] || '';
-  if (LOCAL_CATEGORY_IMAGES[clean]) return LOCAL_CATEGORY_IMAGES[clean];
-  if (LOCAL_CATEGORY_IMAGES[filename]) return LOCAL_CATEGORY_IMAGES[filename];
-
   return { uri: optimizeImageUrl(clean, 300) };
 };
 
@@ -131,7 +113,10 @@ export default function CategoriesPage() {
           {filteredCategories.map((cat) => (
             <Pressable
               key={cat.id}
-              style={styles.gridCard}
+              style={({ pressed }) => [
+                styles.gridCard,
+                pressed && { opacity: 0.75, transform: [{ scale: 0.95 }] },
+              ]}
               onPress={() => router.push(`/customer/category/${cat.slug}` as any)}
             >
               <View style={styles.imageBox}>

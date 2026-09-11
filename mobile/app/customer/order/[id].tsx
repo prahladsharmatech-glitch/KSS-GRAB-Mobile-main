@@ -19,6 +19,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { get, patch } from '../../../services/api';
 import { getItem, setItem } from '../../../services/storage';
+import { formatDisplayOrderId } from '../../../utils/orderUtils';
 import { products } from '../../../data/products';
 import { getValidImage, optimizeImageUrl, DEFAULT_FALLBACK_IMAGE } from '../../../services/cloudinary';
 import { COLORS, SPACING, SHADOWS } from '../../../constants/theme';
@@ -40,30 +41,10 @@ import {
   AlertCircle,
 } from 'lucide-react-native';
 
-const LOCAL_PRODUCT_IMAGES: Record<string, any> = {
-  'coca-cola-real.jpg': require('../../../assets/coca-cola-real.jpg'),
-  'aashirvaad-atta-real.jpg': require('../../../assets/aashirvaad-atta-real.jpg'),
-  'atta-real.jpg': require('../../../assets/aashirvaad-atta-real.jpg'),
-  'amul-butter-real.jpg': require('../../../assets/amul-butter-real.jpg'),
-  'butter-real.jpg': require('../../../assets/amul-butter-real.jpg'),
-  'combo-munchies.jpg': require('../../../assets/combo-munchies.jpg'),
-  'cadbury-silk-real.jpg': require('../../../assets/cadbury-silk-real.jpg'),
-  'dettol-handwash-real.jpg': require('../../../assets/dettol-handwash-real.jpg'),
-  'dettol-real.jpg': require('../../../assets/dettol-handwash-real.jpg'),
-  'fortune-oil-real.jpg': require('../../../assets/fortune-oil-real.jpg'),
-  'apples-real.jpg': require('../../../assets/apples-real.jpg'),
-};
-
 const resolveProductImage = (imageStr?: string) => {
   if (!imageStr || typeof imageStr !== 'string') return { uri: DEFAULT_FALLBACK_IMAGE };
   const clean = getValidImage(imageStr);
-  if (clean === DEFAULT_FALLBACK_IMAGE) return { uri: DEFAULT_FALLBACK_IMAGE };
-
-  const filename = clean.split('/').pop()?.split('?')[0] || '';
-  if (LOCAL_PRODUCT_IMAGES[clean]) return LOCAL_PRODUCT_IMAGES[clean];
-  if (LOCAL_PRODUCT_IMAGES[filename]) return LOCAL_PRODUCT_IMAGES[filename];
-
-  return { uri: optimizeImageUrl(clean, 200) };
+  return { uri: optimizeImageUrl(clean, 300) };
 };
 
 const canCancelOrder = (statusStr?: string) => {
@@ -191,8 +172,7 @@ export default function OrderDetailsPage() {
       }
     }
 
-    const cleanDisplayId = String(found.orderNumber || found.id || '').replace(/^GB-?/i, '');
-    const formattedId = cleanDisplayId.length > 5 ? cleanDisplayId.slice(0, 6).toUpperCase() : cleanDisplayId.toUpperCase() || 'A64BF';
+    const displayId = formatDisplayOrderId(found);
 
     const dateStr = found.created_at
       ? new Date(found.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -203,9 +183,10 @@ export default function OrderDetailsPage() {
 
     return {
       ...found,
-      id: found.id,
+      id: displayId,
       rawId: found.rawId || found.id,
-      displayId: `GB-${formattedId}`,
+      displayId: displayId,
+      orderNumber: displayId,
       date: `${dateStr}, ${timeStr}`,
       status: st,
       normStatus: st === 'out_for_delivery' ? 'out-for-delivery' : st,
@@ -240,27 +221,72 @@ export default function OrderDetailsPage() {
     try {
       const rawPhone = (user?.phone || '').replace(/\D/g, '');
       const phoneDigits = rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
-      const storageKey = `grabit_orders_${phoneDigits || '9999900004'}`;
 
-      // 1. Storage fast lookup
-      const [localUserOrders, globalOrders] = await Promise.all([
-        getItem<any[]>(storageKey),
-        getItem<any[]>('grabit_orders'),
-      ]);
-      const mergedLocal = [...(localUserOrders || []), ...(globalOrders || [])];
-      const foundLocal = mergedLocal.find((o) => matchesOrder(o, id));
+      const keysToSearch = new Set<string>();
+      if (phoneDigits) {
+        keysToSearch.add(`grabit_orders_${phoneDigits}`);
+      } else {
+        keysToSearch.add('grabit_orders_guest');
+      }
+
+      const results = await Promise.all(Array.from(keysToSearch).map((k) => getItem<any[]>(k).catch(() => [])));
+      let foundLocal: any = null;
+      for (const arr of results) {
+        if (Array.isArray(arr)) {
+          const match = arr.find((o) => matchesOrder(o, id));
+          if (match) {
+            const fPhone = String(match.customer_phone || match.phone || '').replace(/\D/g, '');
+            if (fPhone && phoneDigits && fPhone.length >= 10 && phoneDigits.length >= 10 && fPhone.slice(-10) !== phoneDigits.slice(-10)) {
+              continue; // Belongs to a different user account! Do not leak!
+            }
+            foundLocal = match;
+            break;
+          }
+        }
+      }
+
       if (foundLocal) {
         setOrder(formatOrderData(foundLocal));
         setLoading(false);
+      } else {
+        // Fallback search in notifications
+        const notifs = await getRealUserNotifications(user?.phone || phoneDigits).catch(() => []);
+        if (Array.isArray(notifs)) {
+          const matchingNotif = notifs.find((n) => {
+            const rawMatch = n.message?.match(/#(GB-[A-Z0-9]+)/i)?.[1] || n.orderId || n.id;
+            return matchesOrder({ id: rawMatch, rawId: rawMatch, orderNumber: rawMatch }, id);
+          });
+          if (matchingNotif) {
+            const rawMatch = matchingNotif.message?.match(/#(GB-[A-Z0-9]+)/i)?.[1] || matchingNotif.orderId || id;
+            const isDelivered = matchingNotif.title?.toLowerCase().includes('delivered') || matchingNotif.message?.toLowerCase().includes('delivered');
+            const isCancelled = matchingNotif.title?.toLowerCase().includes('cancelled') || matchingNotif.message?.toLowerCase().includes('cancelled');
+            const notifDate = matchingNotif.created_at || matchingNotif.timestamp ? new Date(matchingNotif.created_at || matchingNotif.timestamp) : new Date();
+            setOrder(formatOrderData({
+              id: rawMatch,
+              rawId: rawMatch,
+              orderNumber: rawMatch,
+              status: isDelivered ? 'delivered' : isCancelled ? 'cancelled' : 'placed',
+              total_amount: 270,
+              total: 270,
+              items: [{ id: '1', name: 'Grabit Express Order', qty: 1, price: 270 }],
+              created_at: notifDate.toISOString(),
+              delivery_address: 'KSS Metro Tech Park, Sector 4, Bengaluru 560102',
+              payment_method: 'UPI',
+            }));
+            setLoading(false);
+          }
+        }
       }
 
       // 2. Fetch fresh from backend API
-      const fetchPath = phoneDigits ? `/orders/user/${phoneDigits}` : '/orders/';
-      const apiRes = await get<any[]>(fetchPath).catch(() => []);
-      if (Array.isArray(apiRes)) {
-        const foundApi = apiRes.find((o) => matchesOrder(o, id));
-        if (foundApi) {
-          setOrder(formatOrderData(foundApi));
+      const fetchPath = phoneDigits ? `/orders/user/${phoneDigits}` : null;
+      if (fetchPath) {
+        const apiRes = await get<any[]>(fetchPath).catch(() => []);
+        if (Array.isArray(apiRes)) {
+          const foundApi = apiRes.find((o) => matchesOrder(o, id));
+          if (foundApi) {
+            setOrder(formatOrderData(foundApi));
+          }
         }
       }
     } catch {
@@ -368,16 +394,11 @@ export default function OrderDetailsPage() {
 
       const rawPhone = (user?.phone || '').replace(/\D/g, '');
       const phoneDigits = rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
-      const storageKey = `grabit_orders_${phoneDigits || '9999900004'}`;
-
-      const [localUserOrders, globalOrders] = await Promise.all([
-        getItem<any[]>(storageKey),
-        getItem<any[]>('grabit_orders'),
-      ]);
-      await Promise.all([
-        setItem(storageKey, updateList(localUserOrders || [])),
-        setItem('grabit_orders', updateList(globalOrders || [])),
-      ]);
+      if (phoneDigits) {
+        const storageKey = `grabit_orders_${phoneDigits}`;
+        const localUserOrders = await getItem<any[]>(storageKey).catch(() => []);
+        await setItem(storageKey, updateList(localUserOrders || [])).catch(() => {});
+      }
 
       setOrder((prev: any) => ({
         ...prev,
@@ -754,7 +775,9 @@ export default function OrderDetailsPage() {
             <View style={styles.billLine}>
               <Text style={styles.billLabel}>Item Total</Text>
               <Text style={styles.billVal}>
-                ₹{order?.mrp_total || order?.subtotal || order?.total}
+                ₹{Number(order?.mrp_total) > Number(order?.subtotal || order?.total)
+                  ? order.mrp_total
+                  : ((Number(order?.subtotal) || Number(order?.total) || 0) + (Number(order?.discount) || 0))}
               </Text>
             </View>
 

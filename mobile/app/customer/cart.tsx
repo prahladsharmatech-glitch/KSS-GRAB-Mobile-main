@@ -256,14 +256,20 @@ export default function CartPage() {
               {/* Pink Soft Stepper */}
               <View style={styles.qtyPinkStepper}>
                 <Pressable
-                  style={styles.pinkStepperBtn}
+                  style={({ pressed }) => [
+                    styles.pinkStepperBtn,
+                    pressed && { opacity: 0.5, transform: [{ scale: 0.85 }] },
+                  ]}
                   onPress={() => updateQuantity(product.id, quantity - 1)}
                 >
                   <Minus size={13} color="#E11D48" />
                 </Pressable>
                 <Text style={styles.pinkQtyText}>{quantity}</Text>
                 <Pressable
-                  style={styles.pinkStepperBtn}
+                  style={({ pressed }) => [
+                    styles.pinkStepperBtn,
+                    pressed && { opacity: 0.5, transform: [{ scale: 0.85 }] },
+                  ]}
                   onPress={() => updateQuantity(product.id, quantity + 1)}
                 >
                   <Plus size={13} color="#E11D48" />
@@ -294,7 +300,7 @@ export default function CartPage() {
 
           <View style={styles.billLineRow}>
             <Text style={styles.billLineLabel}>Item Total</Text>
-            <Text style={styles.billLineVal}>₹{itemTotal}</Text>
+            <Text style={styles.billLineVal}>₹{mrpTotal > itemTotal ? mrpTotal : itemTotal}</Text>
           </View>
 
           {discount > 0 ? (
@@ -343,7 +349,10 @@ export default function CartPage() {
       {/* ── 7. STICKY BOTTOM ACTION FOOTER ── */}
       <View style={styles.stickyFooter}>
         <Pressable
-          style={styles.actionMagentaBtn}
+          style={({ pressed }) => [
+            styles.actionMagentaBtn,
+            pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
+          ]}
           onPress={() => router.push('/customer/checkout' as any)}
         >
           <Text style={styles.actionMagentaBtnText}>

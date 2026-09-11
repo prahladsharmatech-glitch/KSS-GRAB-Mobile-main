@@ -1,10 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import MapView, { Marker, Polyline } from 'react-native-maps';
+let MapView: any = null;
+let Marker: any = null;
+let Polyline: any = null;
+
+if (Platform.OS !== 'web') {
+  try {
+    const Maps = require('react-native-maps');
+    MapView = Maps.default;
+    Marker = Maps.Marker;
+    Polyline = Maps.Polyline;
+  } catch {}
+}
 import { get, patch } from '../../../services/api';
+import { getItem } from '../../../services/storage';
 import { wsClient } from '../../../services/websocket';
 import { Order } from '../../../types';
+import { useAuth } from '../../../context/AuthContext';
 import { useToast } from '../../../context/ToastContext';
 import { LoadingView } from '../../../components/LoadingView';
 import { COLORS, SPACING, SHADOWS } from '../../../constants/theme';
@@ -14,6 +27,7 @@ export default function OrderTrackingPage() {
   const router = useRouter();
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
   const { showToast } = useToast();
+  const { user } = useAuth();
 
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -21,12 +35,46 @@ export default function OrderTrackingPage() {
   const [destCoords] = useState({ latitude: 12.9716, longitude: 77.5946 });
 
   useEffect(() => {
-    get(`/orders/${orderId}`)
-      .then((res) => {
-        if (res && res.id) setOrder(res);
-      })
-      .catch(() => {})
-      .finally(() => setIsLoading(false));
+    const fetchTrackOrder = async () => {
+      if (!orderId) return;
+      try {
+        const res = await get(`/orders/${orderId}`).catch(() => null);
+        if (res && (res.id || res.rawId)) {
+          setOrder(res);
+          return;
+        }
+
+        const rawPhone = (user?.phone || '').replace(/\D/g, '');
+        const phoneDigits = rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
+        const keysToSearch = phoneDigits ? [`grabit_orders_${phoneDigits}`] : ['grabit_orders_guest'];
+        const results = await Promise.all(keysToSearch.map((k) => getItem<any[]>(k).catch(() => [])));
+        const targetClean = String(orderId).toLowerCase().replace(/^(ord|gb)-?/i, '');
+
+        for (const arr of results) {
+          if (Array.isArray(arr)) {
+            const found = arr.find((o) => {
+              if (!o) return false;
+              const oPhone = String(o.customer_phone || o.phone || '').replace(/\D/g, '');
+              if (oPhone && phoneDigits && oPhone.length >= 10 && phoneDigits.length >= 10 && oPhone.slice(-10) !== phoneDigits.slice(-10)) {
+                return false; // Belongs to a different user account! Do not leak!
+              }
+              const idStr = String(o.id || o.rawId || o.orderNumber || '').toLowerCase().replace(/^(ord|gb)-?/i, '');
+              return idStr === targetClean || String(o.id) === orderId || String(o.rawId) === orderId;
+            });
+            if (found) {
+              setOrder(found);
+              break;
+            }
+          }
+        }
+      } catch (err) {
+        // Silently ignore
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchTrackOrder();
 
     // Connect to WebSocket for live delivery rider location stream
     wsClient.connect();
@@ -56,24 +104,32 @@ export default function OrderTrackingPage() {
 
   if (isLoading) return <LoadingView message="Connecting to Rider GPS Tracking..." />;
 
-  const displayOrder: Order = order || {
-    id: orderId || 'ORD-982145',
-    items: [
-      { product_id: 'p1', name: 'Amul Taaza Toned Milk (1L)', price: 54, quantity: 2 },
-      { product_id: 'p4', name: "Lay's Magic Masala Chips", price: 20, quantity: 1 },
-    ],
-    subtotal: 128,
-    delivery_fee: 0,
-    discount: 10,
-    total: 118,
-    status: 'OUT_FOR_DELIVERY',
-    payment_method: 'UPI',
-    payment_status: 'COMPLETED',
-    rider_name: 'Rahul Sharma (Fastest Agent)',
-    rider_phone: '+919876543210',
-    created_at: '2 mins ago',
-    estimated_delivery_time: '7 Mins',
-  };
+  if (!order) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Pressable style={styles.backBtn} onPress={() => router.back()}>
+            <ArrowLeft size={20} color={COLORS.text} />
+          </Pressable>
+          <Text style={styles.headerTitle}>Order Tracking</Text>
+        </View>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: COLORS.text, marginBottom: 8 }}>Order Not Found</Text>
+          <Text style={{ fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 20 }}>
+            This order may have been cancelled or deleted.
+          </Text>
+          <Pressable
+            style={{ backgroundColor: COLORS.primary, paddingVertical: 12, paddingHorizontal: 24, borderRadius: 10 }}
+            onPress={() => router.replace('/customer/orders' as any)}
+          >
+            <Text style={{ color: '#FFF', fontWeight: '700' }}>View My Orders</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  const displayOrder: Order = order;
 
   return (
     <View style={styles.container}>

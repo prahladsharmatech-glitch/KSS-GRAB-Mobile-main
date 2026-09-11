@@ -8,7 +8,22 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
-import MapView, { Marker, Circle, UrlTile, PROVIDER_DEFAULT } from 'react-native-maps';
+let MapView: any = null;
+let Marker: any = null;
+let Circle: any = null;
+let UrlTile: any = null;
+let PROVIDER_DEFAULT: any = null;
+
+if (Platform.OS !== 'web') {
+  try {
+    const Maps = require('react-native-maps');
+    MapView = Maps.default;
+    Marker = Maps.Marker;
+    Circle = Maps.Circle;
+    UrlTile = Maps.UrlTile;
+    PROVIDER_DEFAULT = Maps.PROVIDER_DEFAULT;
+  } catch {}
+}
 import {
   MapPin,
   Navigation,

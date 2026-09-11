@@ -23,6 +23,7 @@ import { ProductCard } from '../../components/ProductCard';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import { products as localProducts, CatalogProduct } from '../../data/products';
 import { get } from '../../services/api';
+import { getCloudinaryUrl } from '../../services/cloudinary';
 import { Product } from '../../types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -335,7 +336,7 @@ export default function FreshProducePage() {
               {vegList.length > 0 && (
                 <View style={styles.sectionCard}>
                   <Image
-                    source={require('../../assets/banner-fresh-vegetables-section.jpg')}
+                    source={{ uri: getCloudinaryUrl('banner-fresh-vegetables-section.jpg') }}
                     style={styles.sectionBannerImage}
                     resizeMode="cover"
                   />
@@ -360,7 +361,7 @@ export default function FreshProducePage() {
               {fruitList.length > 0 && (
                 <View style={styles.sectionCardFruit}>
                   <Image
-                    source={require('../../assets/banner-fresh-fruits.jpg')}
+                    source={{ uri: getCloudinaryUrl('banner-fresh-fruits.jpg') }}
                     style={styles.sectionBannerImage}
                     resizeMode="cover"
                   />
@@ -385,7 +386,7 @@ export default function FreshProducePage() {
               {greensList.length > 0 && (
                 <View style={styles.sectionCardGreen}>
                   <Image
-                    source={require('../../assets/banner-leafy-greens-section.jpg')}
+                    source={{ uri: getCloudinaryUrl('banner-leafy-greens-section.jpg') }}
                     style={styles.sectionBannerImage}
                     resizeMode="cover"
                   />

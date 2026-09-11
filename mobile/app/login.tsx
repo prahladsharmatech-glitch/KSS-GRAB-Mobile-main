@@ -20,8 +20,9 @@ import {
 import { useRouter } from 'expo-router';
 import { UserRole, UserProfile } from '../types';
 import { post } from '../services/api';
+import { getCloudinaryUrl } from '../services/cloudinary';
 
-const BANNER_IMAGE = require('../assets/grabit_light_login_banner.jpg');
+const BANNER_IMAGE = { uri: getCloudinaryUrl('grabit_light_login_banner.jpg') };
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -105,7 +106,10 @@ export default function LoginScreen() {
 
   const finishLogin = async (userObj: any, token: string) => {
     const resolvedUser: UserProfile = { ...userObj };
-    if (
+    if (resolvedUser.phone && resolvedUser.phone.includes('9360843281')) {
+      resolvedUser.name = 'Akash';
+      (resolvedUser as any).full_name = 'Akash';
+    } else if (
       resolvedUser.phone === '+919999900003' ||
       resolvedUser.name === 'Speedy Express Delivery' ||
       (resolvedUser as any).full_name === 'Speedy Express Delivery'
@@ -159,6 +163,7 @@ export default function LoginScreen() {
       '+919999900002': { name: 'GrabIt Supermarket', role: 'seller' },
       '+919999900003': { name: 'Karthik Rider', role: 'delivery_agent' },
       '+919999900004': { name: 'Rahul Sharma', role: 'customer' },
+      '+919360843281': { name: 'Akash', role: 'customer' },
       '+919080841727': { name: 'Thabee', role: 'delivery_agent' },
     };
 
@@ -291,10 +296,22 @@ export default function LoginScreen() {
     }
   };
 
-  const selectDemoRole = (demoPhone: string, demoName: string) => {
-    setPhoneDigits(demoPhone.replace('+91', ''));
-    setName(demoName);
+  const selectDemoRole = async (demoPhone: string, demoName: string) => {
+    if (busy) return;
+    // Pre-fill the phone number and send OTP — user must still verify to log in
+    const digits = demoPhone.replace('+91', '').replace(/\D/g, '').slice(-10);
+    if (!digits || digits.length !== 10) return;
+    setPhoneDigits(digits);
+    setBusy(true);
     setError('');
+    setStep('phone'); // Reset to phone step first so the full phone is set
+    const fullP = '+91' + digits;
+    const otpRes = await requestOtpFor(fullP);
+    setBusy(false);
+    if (otpRes?.ok) {
+      setOtp('');
+      setStep('otp');
+    }
   };
 
   const isPhoneValid = phoneDigits.length === 10;
@@ -573,9 +590,9 @@ export default function LoginScreen() {
               </View>
             )}
 
-            {/* Quick Demo Access Role Cards Grid */}
+            {/* Quick Access Role Tiles — pre-fills phone & goes to OTP step */}
             <View style={styles.demoSection}>
-              <Text style={styles.demoSectionHeader}>⚡ INSTANT DEMO PORTAL ACCESS</Text>
+              <Text style={styles.demoSectionHeader}>⚡ QUICK ACCESS — OTP REQUIRED</Text>
               <View style={styles.demoGrid}>
                 {[
                   { label: 'Customer', icon: '🛒', phone: '+919999900004', name: 'Rahul Sharma' },

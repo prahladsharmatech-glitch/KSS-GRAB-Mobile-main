@@ -22,6 +22,7 @@ import { useCart } from '../context/CartContext';
 import { useLocation } from '../context/LocationContext';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { getCloudinaryUrl } from '../services/cloudinary';
 import { NotificationModal } from './NotificationModal';
 import { getRealUserNotifications } from '../utils/userNotifications';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
@@ -66,7 +67,7 @@ export const CustomerTopHeader: React.FC<CustomerTopHeaderProps> = ({
         <View style={styles.headerLeftCol}>
           <Pressable onPress={() => router.push('/customer' as any)}>
             <Image
-              source={require('../assets/grabit-logo.png')}
+              source={{ uri: getCloudinaryUrl('grabit-logo.png') }}
               style={styles.brandLogoImg}
               resizeMode="contain"
             />

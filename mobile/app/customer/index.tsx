@@ -25,7 +25,7 @@ import { get } from '../../services/api';
 import { Product, Category } from '../../types';
 import { products as localProducts } from '../../data/products';
 import { categories as localCategories, getCanonicalSlug } from '../../data/categories';
-import { getValidImage, optimizeImageUrl } from '../../services/cloudinary';
+import { getCloudinaryUrl, getValidImage, optimizeImageUrl, DEFAULT_FALLBACK_IMAGE } from '../../services/cloudinary';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import {
   Search,
@@ -51,26 +51,6 @@ import {
 } from 'lucide-react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 
-const LOCAL_CATEGORY_IMAGES: Record<string, any> = {
-  'snacks-munchies': require('../../assets/combo-munchies.jpg'),
-  'dairy-bakery': require('../../assets/amul-butter-real.jpg'),
-  'beverages': require('../../assets/coca-cola-real.jpg'),
-  'staples': require('../../assets/aashirvaad-atta-real.jpg'),
-  'chocolates': require('../../assets/cadbury-silk-real.jpg'),
-  'personal-care': require('../../assets/dettol-handwash-real.jpg'),
-  'household': require('../../assets/deal-banner-household.jpg'),
-  'fresh-produce': require('../../assets/apples-real.jpg'),
-  'produce': require('../../assets/apples-real.jpg'),
-  'combo-munchies.jpg': require('../../assets/combo-munchies.jpg'),
-  'amul-butter-real.jpg': require('../../assets/amul-butter-real.jpg'),
-  'coca-cola-real.jpg': require('../../assets/coca-cola-real.jpg'),
-  'aashirvaad-atta-real.jpg': require('../../assets/aashirvaad-atta-real.jpg'),
-  'cadbury-silk-real.jpg': require('../../assets/cadbury-silk-real.jpg'),
-  'dettol-handwash-real.jpg': require('../../assets/dettol-handwash-real.jpg'),
-  'deal-banner-household.jpg': require('../../assets/deal-banner-household.jpg'),
-  'apples-real.jpg': require('../../assets/apples-real.jpg'),
-};
-
 const getCategoryIconSource = (cat: any) => {
   const imageStr = cat.image || cat.image_url || '';
   const iconStr = cat.icon || '';
@@ -85,25 +65,294 @@ const getCategoryIconSource = (cat: any) => {
     return { uri: optimizeImageUrl(iconStr, 150) };
   }
 
-  // 2. Local asset mapping lookup
-  if (LOCAL_CATEGORY_IMAGES[imageStr]) return LOCAL_CATEGORY_IMAGES[imageStr];
-  if (LOCAL_CATEGORY_IMAGES[iconStr]) return LOCAL_CATEGORY_IMAGES[iconStr];
-  if (LOCAL_CATEGORY_IMAGES[slug]) return LOCAL_CATEGORY_IMAGES[slug];
-  if (LOCAL_CATEGORY_IMAGES[canonicalSlug]) return LOCAL_CATEGORY_IMAGES[canonicalSlug];
+  // 2. Cloudinary asset mapping lookup
+  const targetStr = imageStr || iconStr || canonicalSlug || slug;
+  if (targetStr) {
+    const cloudUrl = getValidImage(targetStr);
+    if (cloudUrl && cloudUrl !== DEFAULT_FALLBACK_IMAGE) {
+      return { uri: optimizeImageUrl(cloudUrl, 150) };
+    }
+  }
 
-  // 3. Fallback by name keywords
-  const name = (cat.name || '').toLowerCase();
-  if (name.includes('snack')) return LOCAL_CATEGORY_IMAGES['snacks-munchies'];
-  if (name.includes('dairy')) return LOCAL_CATEGORY_IMAGES['dairy-bakery'];
-  if (name.includes('drink') || name.includes('beverage')) return LOCAL_CATEGORY_IMAGES['beverages'];
-  if (name.includes('atta') || name.includes('rice') || name.includes('dal') || name.includes('staple')) return LOCAL_CATEGORY_IMAGES['staples'];
-  if (name.includes('chocolate') || name.includes('sweet')) return LOCAL_CATEGORY_IMAGES['chocolates'];
-  if (name.includes('personal') || name.includes('care')) return LOCAL_CATEGORY_IMAGES['personal-care'];
-  if (name.includes('house') || name.includes('clean')) return LOCAL_CATEGORY_IMAGES['household'];
-  if (name.includes('fruit') || name.includes('veggie') || name.includes('produce') || name.includes('fresh')) return LOCAL_CATEGORY_IMAGES['fresh-produce'];
-
-  return null;
+  return { uri: DEFAULT_FALLBACK_IMAGE };
 };
+
+const heroSlides = [
+  {
+    bg: '#EEF4FF',
+    borderColor: '#BFDBFE',
+    badge: '⚡ 30-45 MIN EXPRESS DELIVERY',
+    badgeColor: '#0066FF',
+    title: 'Discover. Shop. Save More.',
+    subtitle: 'Top brands, best prices & exclusive hyperlocal offers on everything you love.',
+    btn1Text: 'Shop Now',
+    btn1Bg: '#0066FF',
+    btn1Link: '/customer/categories',
+    btn2Text: 'Explore Offers',
+    btn2Color: '#0066FF',
+    btn2Link: '/customer/trending',
+    image: 'https://res.cloudinary.com/hmx3azp6/image/upload/q_auto,f_auto/grabit_media/savings_basket_clock_transparent.png',
+  },
+  {
+    bg: '#DCFCE7',
+    borderColor: '#86EFAC',
+    badge: '🍃 FARM FRESH GUARANTEED',
+    badgeColor: '#059669',
+    title: 'Fresh Groceries, Delivered Fresh',
+    subtitle: 'Handpicked organic fruits, vegetables & daily essentials delivered to your doorstep.',
+    btn1Text: 'Shop Groceries',
+    btn1Bg: '#059669',
+    btn1Link: '/customer/category/produce',
+    btn2Text: 'Explore Deals',
+    btn2Color: '#059669',
+    btn2Link: '/customer/category/produce',
+    image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645084/grabit_media/fresh_groceries_basket_only.png',
+  },
+  {
+    bg: '#FFF7ED',
+    borderColor: '#FDBA74',
+    badge: '⭐ CRUNCHY. TASTY. IRRESISTIBLE.',
+    badgeColor: '#D97706',
+    title: 'Snacks for Every Craving',
+    subtitle: "From popcorn & crunchy chips to cookies, nachos & treats – we've got it all.",
+    btn1Text: 'Shop Snacks',
+    btn1Bg: '#D97706',
+    btn1Link: '/customer/category/snacks-munchies',
+    btn2Text: 'View All',
+    btn2Color: '#D97706',
+    btn2Link: '/customer/category/snacks-munchies',
+    image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645053/grabit_media/category_snacks_banner.png',
+  },
+];
+
+const quickCatTabs = [
+  { id: 'All', label: 'All', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645084/grabit_media/fresh_groceries_basket_only.png', slug: 'all', color: '#0071E3' },
+  { id: 'Fresh', label: 'Fresh', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645128/grabit_media/apples_real.jpg', slug: 'produce', color: '#34C759' },
+  { id: 'Dairy', label: 'Dairy', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645078/grabit_media/butter_real.jpg', slug: 'dairy-bakery', color: '#0284C7' },
+  { id: 'Snacks', label: 'Snacks', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645100/grabit_media/lays_magic_masala.png', slug: 'snacks-munchies', color: '#D97706' },
+  { id: 'Drinks', label: 'Drinks', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645111/grabit_media/coca_cola_real.jpg', slug: 'beverages', color: '#FF3B30' },
+  { id: 'Atta', label: 'Atta', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645070/grabit_media/atta_real.jpg', slug: 'staples', color: '#65A30D' },
+  { id: 'Sweets', label: 'Sweets', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645118/grabit_media/cadbury_silk_real.jpg', slug: 'chocolates', color: '#7E22CE' },
+  { id: 'Care', label: 'Care', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645135/grabit_media/dettol_handwash_real.jpg', slug: 'personal-care', color: '#EC4899' },
+  { id: 'Household', label: 'Household', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645057/grabit_media/surf_excel_real.jpg', slug: 'household', color: '#2563EB' },
+  { id: 'Tea & Coffee', label: 'Tea & Coffee', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645059/grabit_media/tea_coffee_hero_transparent.png', slug: 'tea-coffee', color: '#854D0E' },
+  { id: 'Instant Food', label: 'Instant Food', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645080/grabit_media/instant_noodles_hero_transparent.png', slug: 'instant-food', color: '#C2410C' },
+  { id: 'Biscuits', label: 'Biscuits', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/oreo_biscuits_real.jpg', slug: 'biscuits', color: '#D97706' },
+  { id: 'Oils & Ghee', label: 'Oils & Ghee', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645142/grabit_media/fortune_oil_real.jpg', slug: 'oil', color: '#CA8A04' },
+  { id: 'Electronics', label: 'Electronics', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645110/grabit_media/electronics_hero_transparent.png', slug: 'electronics', color: '#8B5CF6' },
+  { id: 'Fashion', label: 'Fashion', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645079/grabit_media/sneakers.jpg', slug: 'fashion', color: '#F43F5E' },
+  { id: 'Baby Care', label: 'Baby Care', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067213/grabit_media/category_baby_care.jpg', slug: 'baby-care', color: '#0284C7' },
+  { id: 'Pet Care', label: 'Pet Care', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067219/grabit_media/category_pet_care.jpg', slug: 'pet-care', color: '#EA580C' },
+  { id: 'Beauty', label: 'Beauty', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067215/grabit_media/category_beauty_cosmetics.jpg', slug: 'beauty-cosmetics', color: '#E11D48' },
+  { id: 'Pharma', label: 'Pharma', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067216/grabit_media/category_health_wellness.jpg', slug: 'health-wellness', color: '#16A34A' },
+  { id: 'Meat & Seafood', label: 'Meat & Seafood', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067218/grabit_media/category_meat_seafood.jpg', slug: 'meat-seafood', color: '#DC2626' },
+  { id: 'Kitchen', label: 'Kitchen', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067217/grabit_media/category_home_kitchen.jpg', slug: 'home-kitchen', color: '#EA580C' },
+  { id: 'Stationery', label: 'Stationery', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067224/grabit_media/category_stationery_office.jpg', slug: 'stationery-office', color: '#2563EB' },
+  { id: 'Fitness', label: 'Fitness', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067223/grabit_media/category_sports_fitness.jpg', slug: 'sports-fitness', color: '#16A34A' },
+  { id: 'Toys', label: 'Toys', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067225/grabit_media/category_toys_games.jpg', slug: 'toys-games', color: '#9333EA' },
+  { id: 'Pooja', label: 'Pooja', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067220/grabit_media/category_pooja_needs.jpg', slug: 'pooja-needs', color: '#D97706' },
+];
+
+/**
+ * Isolated DealCountdownBadge: maintains its own 1-second interval so the
+ * 2000-line CustomerHomeScreen does NOT re-render every second.
+ */
+const DealCountdownBadge = React.memo(() => {
+  const [timeLeft, setTimeLeft] = useState({ hours: '02', minutes: '04', seconds: '49' });
+
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      const end = new Date(now);
+      end.setHours((Math.floor(now.getHours() / 3) + 1) * 3, 0, 0, 0);
+      const diff = Math.max(0, Math.floor((end.getTime() - now.getTime()) / 1000));
+      const hours = String(Math.floor(diff / 3600)).padStart(2, '0');
+      const minutes = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
+      const seconds = String(diff % 60).padStart(2, '0');
+      setTimeLeft({ hours, minutes, seconds });
+    };
+
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <View style={styles.timerBadge}>
+      <Text style={styles.timerBadgeLabel}>Ends in</Text>
+      <Text style={styles.timerBadgeVal}>
+        {timeLeft.hours} : {timeLeft.minutes} : {timeLeft.seconds}
+      </Text>
+    </View>
+  );
+});
+
+/**
+ * Isolated HeroCarousel: maintains its own 4-second slide timer so auto-scrolling
+ * does NOT cause full CustomerHomeScreen re-renders.
+ */
+const HeroCarousel = React.memo(() => {
+  const router = useRouter();
+  const [activeSlide, setActiveSlide] = useState(0);
+  const slideTimerRef = useRef<any>(null);
+  const touchStartXRef = useRef<number>(0);
+
+  const startSlideTimer = useCallback(() => {
+    if (slideTimerRef.current) clearInterval(slideTimerRef.current);
+    slideTimerRef.current = setInterval(() => {
+      setActiveSlide((prev) => (prev + 1) % heroSlides.length);
+    }, 4000);
+  }, []);
+
+  const resetSlideTimer = useCallback(() => {
+    startSlideTimer();
+  }, [startSlideTimer]);
+
+  const handleNextSlide = useCallback(() => {
+    setActiveSlide((prev) => (prev + 1) % heroSlides.length);
+    resetSlideTimer();
+  }, [resetSlideTimer]);
+
+  const handlePrevSlide = useCallback(() => {
+    setActiveSlide((prev) => (prev - 1 + heroSlides.length) % heroSlides.length);
+    resetSlideTimer();
+  }, [resetSlideTimer]);
+
+  const handleDotSelect = useCallback(
+    (idx: number) => {
+      setActiveSlide(idx);
+      resetSlideTimer();
+    },
+    [resetSlideTimer]
+  );
+
+  useEffect(() => {
+    startSlideTimer();
+    return () => {
+      if (slideTimerRef.current) {
+        clearInterval(slideTimerRef.current);
+        slideTimerRef.current = null;
+      }
+    };
+  }, [startSlideTimer]);
+
+  const currentSlide = heroSlides[activeSlide] || heroSlides[0];
+
+  return (
+    <View
+      style={[
+        styles.heroSlide,
+        { backgroundColor: currentSlide.bg, borderColor: currentSlide.borderColor },
+      ]}
+      onTouchStart={(e) => {
+        touchStartXRef.current = e.nativeEvent.pageX;
+      }}
+      onTouchEnd={(e) => {
+        const deltaX = e.nativeEvent.pageX - touchStartXRef.current;
+        if (deltaX < -35) {
+          handleNextSlide();
+        } else if (deltaX > 35) {
+          handlePrevSlide();
+        }
+      }}
+    >
+      <View style={styles.heroBadge}>
+        <Text style={[styles.heroBadgeText, { color: currentSlide.badgeColor }]}>
+          {currentSlide.badge}
+        </Text>
+      </View>
+
+      {currentSlide.title === 'Discover. Shop. Save More.' ? (
+        <Text style={styles.heroTitle}>
+          Discover. <Text style={{ color: '#0066FF' }}>Shop.</Text> Save More.
+        </Text>
+      ) : (
+        <Text style={styles.heroTitle}>{currentSlide.title}</Text>
+      )}
+
+      <Text style={styles.heroSub}>{currentSlide.subtitle}</Text>
+
+      <View style={styles.heroBtnRow}>
+        <Pressable
+          style={({ pressed }) => [
+            styles.heroBtn1,
+            { backgroundColor: currentSlide.btn1Bg },
+            pressed && { opacity: 0.8, transform: [{ scale: 0.96 }] },
+          ]}
+          onPress={() => {
+            resetSlideTimer();
+            router.push(currentSlide.btn1Link as any);
+          }}
+        >
+          <Text style={styles.heroBtn1Text}>{currentSlide.btn1Text}</Text>
+          <ArrowRight size={14} color="#FFFFFF" style={{ marginLeft: 4 }} />
+        </Pressable>
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.heroBtn2,
+            { borderColor: currentSlide.btn1Bg },
+            pressed && { opacity: 0.8, transform: [{ scale: 0.96 }] },
+          ]}
+          onPress={() => {
+            resetSlideTimer();
+            router.push(currentSlide.btn2Link as any);
+          }}
+        >
+          <Text style={[styles.heroBtn2Text, { color: currentSlide.btn2Color }]}>
+            {currentSlide.btn2Text}
+          </Text>
+        </Pressable>
+      </View>
+
+      <Image
+        source={typeof currentSlide.image === 'number' || typeof currentSlide.image === 'object' ? currentSlide.image : { uri: optimizeImageUrl(currentSlide.image, 600) }}
+        style={styles.heroImage}
+        resizeMode="contain"
+        fadeDuration={0}
+      />
+
+      {/* Left / Right Carousel Arrows */}
+      <Pressable
+        style={({ pressed }) => [
+          styles.carouselArrowLeft,
+          pressed && { opacity: 0.6, transform: [{ scale: 0.9 }] },
+        ]}
+        onPress={handlePrevSlide}
+      >
+        <ChevronLeft size={16} color="#0F172A" />
+      </Pressable>
+
+      <Pressable
+        style={({ pressed }) => [
+          styles.carouselArrowRight,
+          pressed && { opacity: 0.6, transform: [{ scale: 0.9 }] },
+        ]}
+        onPress={handleNextSlide}
+      >
+        <ChevronRight size={16} color="#0F172A" />
+      </Pressable>
+
+      {/* Carousel Dots */}
+      <View style={styles.dotsRow}>
+        {heroSlides.map((s, idx) => (
+          <Pressable
+            key={idx}
+            onPress={() => handleDotSelect(idx)}
+            hitSlop={8}
+            style={[
+              styles.dot,
+              activeSlide === idx && [
+                styles.dotActive,
+                { backgroundColor: s.badgeColor || '#0066FF', width: 20 },
+              ],
+            ]}
+          />
+        ))}
+      </View>
+    </View>
+  );
+});
 
 export default function CustomerHomeScreen() {
   const router = useRouter();
@@ -123,7 +372,6 @@ export default function CustomerHomeScreen() {
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
 
   const [activeTab, setActiveTab] = useState('All');
-  const [activeSlide, setActiveSlide] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [emailInput, setEmailInput] = useState('');
   const [userRating, setUserRating] = useState(0);
@@ -137,9 +385,6 @@ export default function CustomerHomeScreen() {
       setUnreadNotifCount(list.filter((n) => n.unread).length);
     });
   }, [user?.phone, isNotifModalOpen]);
-
-  // Countdown timer state for Grabit Deals
-  const [timeLeft, setTimeLeft] = useState({ hours: '02', minutes: '04', seconds: '49' });
 
   const fetchHomeData = useCallback(async (isMounted: boolean) => {
     try {
@@ -241,21 +486,8 @@ export default function CustomerHomeScreen() {
   useEffect(() => {
     let isMounted = true;
     fetchHomeData(isMounted);
-
-    const timer = setInterval(() => {
-      const now = new Date();
-      const end = new Date(now);
-      end.setHours((Math.floor(now.getHours() / 3) + 1) * 3, 0, 0, 0);
-      const diff = Math.max(0, Math.floor((end.getTime() - now.getTime()) / 1000));
-      const hours = String(Math.floor(diff / 3600)).padStart(2, '0');
-      const minutes = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
-      const seconds = String(diff % 60).padStart(2, '0');
-      setTimeLeft({ hours, minutes, seconds });
-    }, 1000);
-
     return () => {
       isMounted = false;
-      clearInterval(timer);
     };
   }, [fetchHomeData]);
 
@@ -272,95 +504,6 @@ export default function CustomerHomeScreen() {
     }, [fetchHomeData])
   );
 
-  const heroSlides = [
-    {
-      bg: '#EEF4FF',
-      borderColor: '#93C5FD',
-      badge: '⚡ 30-45 MIN EXPRESS DELIVERY',
-      badgeColor: '#0066FF',
-      title: 'Discover. Shop. Save More.',
-      subtitle: 'Top brands, best prices & exclusive hyperlocal offers on everything you love.',
-      btn1Text: 'Shop Now',
-      btn1Bg: '#0066FF',
-      btn1Link: '/customer/categories',
-      btn2Text: 'Explore Offers',
-      btn2Color: '#0066FF',
-      btn2Link: '/customer/trending',
-      image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645109/grabit_media/savings_basket_clock_transparent.png',
-    },
-    {
-      bg: '#DCFCE7',
-      borderColor: '#86EFAC',
-      badge: '🍃 FARM FRESH GUARANTEED',
-      badgeColor: '#059669',
-      title: 'Fresh Groceries, Delivered Fresh',
-      subtitle: 'Handpicked organic fruits, vegetables & daily essentials delivered to your doorstep.',
-      btn1Text: 'Shop Groceries',
-      btn1Bg: '#059669',
-      btn1Link: '/customer/category/produce',
-      btn2Text: 'Explore Deals',
-      btn2Color: '#059669',
-      btn2Link: '/customer/category/produce',
-      image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645084/grabit_media/fresh_groceries_basket_only.png',
-    },
-    {
-      bg: '#FFEDD5',
-      borderColor: '#FDBA74',
-      badge: '⭐ CRUNCHY. TASTY. IRRESISTIBLE.',
-      badgeColor: '#D97706',
-      title: 'Snacks for Every Craving',
-      subtitle: "From popcorn & chips to cookies, nachos & treats – we've got it all.",
-      btn1Text: 'Shop Snacks',
-      btn1Bg: '#D97706',
-      btn1Link: '/customer/category/snacks-munchies',
-      btn2Text: 'View All',
-      btn2Color: '#D97706',
-      btn2Link: '/customer/category/snacks-munchies',
-      image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645100/grabit_media/category_snacks_banner.png',
-    },
-  ];
-
-  const slideTimerRef = useRef<any>(null);
-  const touchStartXRef = useRef<number>(0);
-
-  const startSlideTimer = useCallback(() => {
-    if (slideTimerRef.current) clearInterval(slideTimerRef.current);
-    slideTimerRef.current = setInterval(() => {
-      setActiveSlide((prev) => (prev + 1) % 3);
-    }, 4000);
-  }, []);
-
-  const resetSlideTimer = useCallback(() => {
-    startSlideTimer();
-  }, [startSlideTimer]);
-
-  const handleNextSlide = useCallback(() => {
-    setActiveSlide((prev) => (prev + 1) % 3);
-    resetSlideTimer();
-  }, [resetSlideTimer]);
-
-  const handlePrevSlide = useCallback(() => {
-    setActiveSlide((prev) => (prev - 1 + 3) % 3);
-    resetSlideTimer();
-  }, [resetSlideTimer]);
-
-  const handleDotSelect = useCallback((idx: number) => {
-    setActiveSlide(idx);
-    resetSlideTimer();
-  }, [resetSlideTimer]);
-
-  useFocusEffect(
-    useCallback(() => {
-      startSlideTimer();
-      return () => {
-        if (slideTimerRef.current) {
-          clearInterval(slideTimerRef.current);
-          slideTimerRef.current = null;
-        }
-      };
-    }, [startSlideTimer])
-  );
-
   useEffect(() => {
     heroSlides.forEach((slide) => {
       if (slide.image) {
@@ -368,34 +511,6 @@ export default function CustomerHomeScreen() {
       }
     });
   }, []);
-
-  const quickCatTabs = [
-    { id: 'All', label: 'All', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645084/grabit_media/fresh_groceries_basket_only.png', slug: 'all', color: '#0071E3' },
-    { id: 'Fresh', label: 'Fresh', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645128/grabit_media/apples_real.jpg', slug: 'produce', color: '#34C759' },
-    { id: 'Dairy', label: 'Dairy', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645078/grabit_media/butter_real.jpg', slug: 'dairy-bakery', color: '#0284C7' },
-    { id: 'Snacks', label: 'Snacks', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645100/grabit_media/lays_magic_masala.png', slug: 'snacks-munchies', color: '#D97706' },
-    { id: 'Drinks', label: 'Drinks', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645111/grabit_media/coca_cola_real.jpg', slug: 'beverages', color: '#FF3B30' },
-    { id: 'Atta', label: 'Atta', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645070/grabit_media/atta_real.jpg', slug: 'staples', color: '#65A30D' },
-    { id: 'Sweets', label: 'Sweets', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645118/grabit_media/cadbury_silk_real.jpg', slug: 'chocolates', color: '#7E22CE' },
-    { id: 'Care', label: 'Care', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645135/grabit_media/dettol_handwash_real.jpg', slug: 'personal-care', color: '#EC4899' },
-    { id: 'Household', label: 'Household', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645057/grabit_media/surf_excel_real.jpg', slug: 'household', color: '#2563EB' },
-    { id: 'Tea & Coffee', label: 'Tea & Coffee', image: 'https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=300', slug: 'tea-coffee', color: '#854D0E' },
-    { id: 'Instant Food', label: 'Instant Food', image: 'https://images.unsplash.com/photo-1612927601601-6638404737ce?w=300', slug: 'instant-food', color: '#C2410C' },
-    { id: 'Biscuits', label: 'Biscuits', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/oreo_biscuits_real.jpg', slug: 'biscuits', color: '#D97706' },
-    { id: 'Oils & Ghee', label: 'Oils & Ghee', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645142/grabit_media/fortune_oil_real.jpg', slug: 'oil', color: '#CA8A04' },
-    { id: 'Electronics', label: 'Electronics', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645110/grabit_media/electronics_hero_transparent.png', slug: 'electronics', color: '#8B5CF6' },
-    { id: 'Fashion', label: 'Fashion', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645079/grabit_media/sneakers.jpg', slug: 'fashion', color: '#F43F5E' },
-    { id: 'Baby Care', label: 'Baby Care', image: 'https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=300', slug: 'baby-care', color: '#0284C7' },
-    { id: 'Pet Care', label: 'Pet Care', image: 'https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=300', slug: 'pet-care', color: '#EA580C' },
-    { id: 'Beauty', label: 'Beauty', image: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=300', slug: 'beauty-cosmetics', color: '#E11D48' },
-    { id: 'Pharma', label: 'Pharma', image: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=300', slug: 'health-wellness', color: '#16A34A' },
-    { id: 'Meat & Seafood', label: 'Meat & Seafood', image: 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?w=300', slug: 'meat-seafood', color: '#DC2626' },
-    { id: 'Kitchen', label: 'Kitchen', image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=300', slug: 'home-kitchen', color: '#EA580C' },
-    { id: 'Stationery', label: 'Stationery', image: 'https://images.unsplash.com/photo-1583485088034-697b5bc54ccd?w=300', slug: 'stationery-office', color: '#2563EB' },
-    { id: 'Fitness', label: 'Fitness', image: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=300', slug: 'sports-fitness', color: '#16A34A' },
-    { id: 'Toys', label: 'Toys', image: 'https://images.unsplash.com/photo-1566576912321-d58ddd7a6088?w=300', slug: 'toys-games', color: '#9333EA' },
-    { id: 'Pooja', label: 'Pooja', image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=300', slug: 'pooja-needs', color: '#D97706' },
-  ];
 
   const handleClaimCoupon = () => {
     if (!emailInput || !emailInput.includes('@')) {
@@ -428,7 +543,7 @@ export default function CustomerHomeScreen() {
         <View style={styles.headerLeftCol}>
           <Pressable onPress={() => router.push('/customer' as any)}>
             <Image
-              source={require('../../assets/grabit-logo.png')}
+              source={{ uri: getCloudinaryUrl('grabit-logo.png') }}
               style={styles.brandLogoImg}
               resizeMode="contain"
             />
@@ -506,96 +621,7 @@ export default function CustomerHomeScreen() {
         </ScrollView>
 
         {/* ── 4. HERO CAROUSEL BANNER ── */}
-        <View
-          style={[styles.heroSlide, { backgroundColor: heroSlides[activeSlide].bg, borderColor: heroSlides[activeSlide].borderColor }]}
-          onTouchStart={(e) => {
-            touchStartXRef.current = e.nativeEvent.pageX;
-          }}
-          onTouchEnd={(e) => {
-            const deltaX = e.nativeEvent.pageX - touchStartXRef.current;
-            if (deltaX < -35) {
-              handleNextSlide();
-            } else if (deltaX > 35) {
-              handlePrevSlide();
-            }
-          }}
-        >
-          <View style={styles.heroBadge}>
-            <Text style={[styles.heroBadgeText, { color: heroSlides[activeSlide].badgeColor }]}>
-              {heroSlides[activeSlide].badge}
-            </Text>
-          </View>
-
-          {heroSlides[activeSlide].title === 'Discover. Shop. Save More.' ? (
-            <Text style={styles.heroTitle}>
-              Discover. <Text style={{ color: '#0066FF' }}>Shop.</Text> Save More.
-            </Text>
-          ) : (
-            <Text style={styles.heroTitle}>{heroSlides[activeSlide].title}</Text>
-          )}
-
-          <Text style={styles.heroSub}>{heroSlides[activeSlide].subtitle}</Text>
-
-          <View style={styles.heroBtnRow}>
-            <Pressable
-              style={[styles.heroBtn1, { backgroundColor: heroSlides[activeSlide].btn1Bg }]}
-              onPress={() => {
-                resetSlideTimer();
-                router.push(heroSlides[activeSlide].btn1Link as any);
-              }}
-            >
-              <Text style={styles.heroBtn1Text}>{heroSlides[activeSlide].btn1Text}</Text>
-              <ArrowRight size={14} color="#FFFFFF" style={{ marginLeft: 4 }} />
-            </Pressable>
-
-            <Pressable
-              style={[styles.heroBtn2, { borderColor: heroSlides[activeSlide].btn1Bg }]}
-              onPress={() => {
-                resetSlideTimer();
-                router.push(heroSlides[activeSlide].btn2Link as any);
-              }}
-            >
-              <Text style={[styles.heroBtn2Text, { color: heroSlides[activeSlide].btn2Color }]}>
-                {heroSlides[activeSlide].btn2Text}
-              </Text>
-            </Pressable>
-          </View>
-
-          {/* Hero Image Graphic */}
-          <Image
-            source={{ uri: optimizeImageUrl(heroSlides[activeSlide].image, 600) }}
-            style={styles.heroImage}
-            resizeMode="contain"
-            fadeDuration={0}
-          />
-
-          {/* Left / Right Carousel Arrows */}
-          <Pressable style={styles.carouselArrowLeft} onPress={handlePrevSlide}>
-            <ChevronLeft size={16} color="#0F172A" />
-          </Pressable>
-
-          <Pressable style={styles.carouselArrowRight} onPress={handleNextSlide}>
-            <ChevronRight size={16} color="#0F172A" />
-          </Pressable>
-
-          {/* Carousel Dots */}
-          <View style={styles.dotsRow}>
-            {heroSlides.map((s, idx) => (
-              <Pressable
-                key={idx}
-                onPress={() => handleDotSelect(idx)}
-                hitSlop={8}
-                style={[
-                  styles.dot,
-                  activeSlide === idx && [
-                    styles.dotActive,
-                    { backgroundColor: s.badgeColor || '#0066FF', width: 20 },
-                  ],
-                ]}
-              />
-            ))}
-          </View>
-        </View>
+        <HeroCarousel />
 
         {/* ── 5. CATEGORIES GRID SECTION ── */}
         <View style={styles.sectionCard}>
@@ -636,47 +662,28 @@ export default function CustomerHomeScreen() {
           {/* Banner 1: Vegetables & Fruits */}
           <Pressable style={styles.promoCardContainer} onPress={() => router.push('/customer/fresh-produce' as any)}>
             <Image
-              source={require('../../assets/banner-fruits-veggies.png')}
+              source={{ uri: getCloudinaryUrl('banner-fruits-veggies.png') }}
               style={styles.promoBannerImage}
               resizeMode="cover"
             />
-            <View style={[styles.bannerButtonOverlay, { top: '68%', left: '5%' }]}>
-              <View style={[styles.orderNowBtn, { backgroundColor: '#166534' }]}>
-                <Text style={styles.orderNowBtnText}>Order Now</Text>
-                <ArrowRight size={13} color="#FFFFFF" style={{ marginLeft: 4 }} />
-              </View>
-            </View>
           </Pressable>
 
           {/* Banner 2: Pharmacy */}
           <Pressable style={styles.promoCardContainer} onPress={() => router.push('/customer/pharmacy' as any)}>
             <Image
-              source={require('../../assets/banner-pharmacy.png')}
+              source={{ uri: getCloudinaryUrl('banner-pharmacy.png') }}
               style={styles.promoBannerImage}
               resizeMode="cover"
             />
-            <View style={[styles.bannerButtonOverlay, { top: '68%', left: '5%' }]}>
-              <View style={[styles.orderNowBtn, { backgroundColor: '#6B21A8' }]}>
-                <ShoppingBag size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
-                <Text style={styles.orderNowBtnText}>Order Now</Text>
-                <ArrowRight size={13} color="#FFFFFF" style={{ marginLeft: 4 }} />
-              </View>
-            </View>
           </Pressable>
 
           {/* Banner 3: Meat */}
           <Pressable style={styles.promoCardContainer} onPress={() => router.push('/customer/chicken-meat' as any)}>
             <Image
-              source={require('../../assets/banner-meat.png')}
+              source={{ uri: getCloudinaryUrl('banner-meat.png') }}
               style={styles.promoBannerImage}
               resizeMode="cover"
             />
-            <View style={[styles.bannerButtonOverlay, { top: '62%', left: '5%' }]}>
-              <View style={[styles.orderNowBtn, { backgroundColor: '#991B1B' }]}>
-                <Text style={styles.orderNowBtnText}>Order Now</Text>
-                <ArrowRight size={13} color="#FFFFFF" style={{ marginLeft: 4 }} />
-              </View>
-            </View>
           </Pressable>
         </View>
 
@@ -711,7 +718,7 @@ export default function CustomerHomeScreen() {
           onPress={() => router.push('/customer/category/snacks-munchies' as any)}
         >
           <Image
-            source={require('../../assets/banner-snacks-cravings-full.png')}
+            source={{ uri: getCloudinaryUrl('banner-snacks-cravings-full.png') }}
             style={styles.snackBannerFullImg}
             resizeMode="cover"
           />
@@ -748,7 +755,7 @@ export default function CustomerHomeScreen() {
               onPress={() => router.push('/customer/category/snacks-munchies' as any)}
             >
               <Image
-                source={require('../../assets/deal-banner-snacks-vibrant.jpg')}
+                source={{ uri: getCloudinaryUrl('deal-banner-snacks-vibrant.jpg') }}
                 style={styles.dealGraphicImg}
                 resizeMode="cover"
               />
@@ -760,43 +767,55 @@ export default function CustomerHomeScreen() {
               onPress={() => router.push('/customer/category/beverages' as any)}
             >
               <Image
-                source={require('../../assets/deal-banner-beverages.jpg')}
+                source={{ uri: getCloudinaryUrl('deal-banner-beverages.jpg') }}
                 style={styles.dealGraphicImg}
                 resizeMode="cover"
               />
             </Pressable>
 
-            {/* Offer 3: Premium Dry Fruits & Nuts */}
+            {/* Offer 3: Farm Fresh Dairy */}
+            <Pressable
+              style={styles.dealGraphicCard}
+              onPress={() => router.push('/customer/category/dairy-bakery' as any)}
+            >
+              <Image
+                source={{ uri: getCloudinaryUrl('deal-banner-dairy.jpg') }}
+                style={styles.dealGraphicImg}
+                resizeMode="cover"
+              />
+            </Pressable>
+
+            {/* Offer 4: Premium Dry Fruits & Nuts */}
             <Pressable
               style={styles.dealGraphicCard}
               onPress={() => router.push('/customer/category/produce' as any)}
             >
               <Image
-                source={require('../../assets/deal-banner-dryfruits.jpg')}
+                source={{ uri: getCloudinaryUrl('deal-banner-dryfruits.jpg') }}
                 style={styles.dealGraphicImg}
                 resizeMode="cover"
               />
             </Pressable>
 
-            {/* Offer 4: Chocolates & Sweets */}
+            {/* Offer 5: Chocolates & Sweets */}
             <Pressable
               style={styles.dealGraphicCard}
               onPress={() => router.push('/customer/category/chocolates' as any)}
             >
               <Image
-                source={require('../../assets/deal-banner-chocolates.jpg')}
+                source={{ uri: getCloudinaryUrl('deal-banner-chocolates.jpg') }}
                 style={styles.dealGraphicImg}
                 resizeMode="cover"
               />
             </Pressable>
 
-            {/* Offer 5: Household Essentials */}
+            {/* Offer 6: Household Essentials */}
             <Pressable
               style={styles.dealGraphicCard}
               onPress={() => router.push('/customer/category/household' as any)}
             >
               <Image
-                source={require('../../assets/deal-banner-household.jpg')}
+                source={{ uri: getCloudinaryUrl('deal-banner-household.jpg') }}
                 style={styles.dealGraphicImg}
                 resizeMode="cover"
               />
@@ -809,12 +828,7 @@ export default function CustomerHomeScreen() {
           <View style={styles.sectionHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Text style={styles.sectionTitle}>Grabit Deals</Text>
-              <View style={styles.timerBadge}>
-                <Text style={styles.timerBadgeLabel}>Ends in</Text>
-                <Text style={styles.timerBadgeVal}>
-                  {timeLeft.hours} : {timeLeft.minutes} : {timeLeft.seconds}
-                </Text>
-              </View>
+              <DealCountdownBadge />
             </View>
             <Pressable onPress={() => router.push('/customer/deals' as any)}>
               <Text style={styles.seeAllText}>View all</Text>
@@ -838,7 +852,7 @@ export default function CustomerHomeScreen() {
           onPress={() => router.push('/customer/deals' as any)}
         >
           <Image
-            source={require('../../assets/banner-exclusive-deals.png')}
+            source={{ uri: getCloudinaryUrl('banner-exclusive-deals.png') }}
             style={styles.exclusiveDealsImg}
             resizeMode="cover"
           />
@@ -872,7 +886,7 @@ export default function CustomerHomeScreen() {
         {/* ── 13. EXACT SCREENSHOT 7 GET FLAT ₹100 COUPON BOX ── */}
         <View style={styles.couponSubscribeCard}>
           <Image
-            source={require('../../assets/vip-gift-box-3d.png')}
+            source={{ uri: getCloudinaryUrl('vip-gift-box-3d.png') }}
             style={styles.coupon3dGiftImage}
             resizeMode="contain"
           />
@@ -906,7 +920,7 @@ export default function CustomerHomeScreen() {
         <View style={styles.suggestCard}>
           <View style={styles.suggestTopRow}>
             <Image
-              source={require('../../assets/suggest-product-3d.png')}
+              source={{ uri: getCloudinaryUrl('suggest-product-3d.png') }}
               style={styles.suggest3dGraphic}
               resizeMode="contain"
             />

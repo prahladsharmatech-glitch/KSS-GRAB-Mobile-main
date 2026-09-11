@@ -14,6 +14,7 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { getCloudinaryUrl } from '../../services/cloudinary';
 import Svg, {
   Path,
   Defs,
@@ -296,11 +297,11 @@ export default function AdminPortalScreen({ initialTab }: { initialTab?: string 
           get('/admin/fleet/global-leave').catch(() => null),
         ]);
 
-      if (Array.isArray(ordersRes) && ordersRes.length > 0) {
+      if (Array.isArray(ordersRes)) {
         setOrders(ordersRes);
-      } else {
-        const savedOrders = (await getItem<any[]>('grabit_orders')) || [];
-        if (savedOrders.length > 0) setOrders(savedOrders);
+        if (ordersRes.length === 0) {
+          await removeItem('grabit_orders').catch(() => {});
+        }
       }
 
       if (Array.isArray(partnersRes) && partnersRes.length > 0) {
@@ -810,7 +811,7 @@ export default function AdminPortalScreen({ initialTab }: { initialTab?: string 
       <View style={styles.headerBar}>
         <View style={styles.headerLeft}>
           <Image
-            source={require('../../assets/grabit-logo.png')}
+            source={{ uri: getCloudinaryUrl('grabit-logo.png') }}
             style={styles.logoImg}
             resizeMode="contain"
           />
@@ -1160,34 +1161,42 @@ export default function AdminPortalScreen({ initialTab }: { initialTab?: string 
               </View>
 
               <View style={styles.activitiesList}>
-                {[
-                  { id: 'GB-C5001', st: 'placed', cust: 'Rahul Customer', amt: 110, time: '04:35 pm' },
-                  { id: 'GB-16AED', st: 'placed', cust: 'Rahul Customer', amt: 230, time: '04:01 pm' },
-                  { id: 'GB-07AEF', st: 'placed', cust: 'Rahul Customer', amt: 230, time: '04:01 pm' },
-                  { id: 'GB-A64BF', st: 'placed', cust: 'Rahul Customer', amt: 70, time: '03:52 pm' },
-                  { id: 'GB-395B6', st: 'placed', cust: 'Rahul Customer', amt: 145, time: '12:08 am' },
-                ].map((item, idx) => (
-                  <Pressable
-                    key={idx}
-                    style={styles.activityItem}
-                    onPress={() => setSelectedOrderModal({ id: item.id, customer_name: item.cust, total_amount: item.amt, status: item.st })}
-                  >
-                    <View style={styles.activityIconBox}>
-                      <ShoppingBag size={14} color="#8B5CF6" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.activityTitle}>
-                        Order #{item.id} — Placed
-                      </Text>
-                      <Text style={styles.activitySub}>
-                        {item.cust} · ₹{item.amt}
-                      </Text>
-                    </View>
-                    <View style={styles.activityTimeBadge}>
-                      <Text style={styles.activityTimeText}>{item.time}</Text>
-                    </View>
-                  </Pressable>
-                ))}
+                {orders.length === 0 ? (
+                  <Text style={{ padding: 12, color: '#94A3B8', fontSize: 13 }}>No recent order activities</Text>
+                ) : (
+                  orders.slice(0, 5).map((item, idx) => {
+                    const cleanDisplayId = String(item.orderNumber || item.id || '').replace(/^GB-?/i, '');
+                    const formattedId = cleanDisplayId.length > 5 ? cleanDisplayId.slice(0, 6).toUpperCase() : cleanDisplayId.toUpperCase() || `ORD${idx}`;
+                    const displayId = `GB-${formattedId}`;
+                    const custName = item.customer_name || item.customerName || item.name || 'Customer';
+                    const amt = Number(item.total_amount || item.total || 0);
+                    const st = String(item.status || 'placed').toLowerCase();
+                    const timeStr = item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently';
+
+                    return (
+                      <Pressable
+                        key={item.id || idx}
+                        style={styles.activityItem}
+                        onPress={() => setSelectedOrderModal({ ...item, id: displayId, customer_name: custName, total_amount: amt, status: st })}
+                      >
+                        <View style={styles.activityIconBox}>
+                          <ShoppingBag size={14} color="#8B5CF6" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.activityTitle}>
+                            Order #{displayId} — {st.toUpperCase()}
+                          </Text>
+                          <Text style={styles.activitySub}>
+                            {custName} · ₹{amt}
+                          </Text>
+                        </View>
+                        <View style={styles.activityTimeBadge}>
+                          <Text style={styles.activityTimeText}>{timeStr}</Text>
+                        </View>
+                      </Pressable>
+                    );
+                  })
+                )}
               </View>
             </View>
 
@@ -1208,34 +1217,41 @@ export default function AdminPortalScreen({ initialTab }: { initialTab?: string 
               </View>
 
               <View style={styles.liveQueueList}>
-                {[
-                  { id: 'GB-C5001', cust: 'Rahul Customer', amt: 110, badge: 'Process' },
-                  { id: 'GB-16AED', cust: 'Rahul Customer', amt: 230, badge: 'Process' },
-                  { id: 'GB-07AEF', cust: 'Rahul Customer', amt: 230, badge: 'Process' },
-                  { id: 'GB-A64BF', cust: 'Rahul Customer', amt: 70, badge: 'Process' },
-                  { id: 'GB-395B6', cust: 'Rahul Customer', amt: 145, badge: 'Process' },
-                ].map((ord, idx) => (
-                  <View key={idx} style={styles.queueItemCard}>
-                    <View style={{ flex: 1 }}>
-                      <View style={styles.queueHeaderRow}>
-                        <Text style={styles.queueOrderId}>{ord.id}</Text>
-                        <View style={styles.processPill}>
-                          <Text style={styles.processPillText}>{ord.badge}</Text>
-                        </View>
-                      </View>
-                      <Text style={styles.queueCustomerText}>
-                        {ord.cust} • ₹{ord.amt}
-                      </Text>
-                    </View>
+                {orders.length === 0 ? (
+                  <Text style={{ padding: 12, color: '#94A3B8', fontSize: 13 }}>No active orders in live queue</Text>
+                ) : (
+                  orders.slice(0, 5).map((ord, idx) => {
+                    const cleanDisplayId = String(ord.orderNumber || ord.id || '').replace(/^GB-?/i, '');
+                    const formattedId = cleanDisplayId.length > 5 ? cleanDisplayId.slice(0, 6).toUpperCase() : cleanDisplayId.toUpperCase() || `ORD${idx}`;
+                    const displayId = `GB-${formattedId}`;
+                    const custName = ord.customer_name || ord.customerName || ord.name || 'Customer';
+                    const amt = Number(ord.total_amount || ord.total || 0);
+                    const badge = String(ord.status || 'PLACED').toUpperCase();
 
-                    <Pressable
-                      style={styles.viewOrderBtn}
-                      onPress={() => setSelectedOrderModal({ id: ord.id, customer_name: ord.cust, total_amount: ord.amt, status: 'placed' })}
-                    >
-                      <Text style={styles.viewOrderBtnText}>View</Text>
-                    </Pressable>
-                  </View>
-                ))}
+                    return (
+                      <View key={ord.id || idx} style={styles.queueItemCard}>
+                        <View style={{ flex: 1 }}>
+                          <View style={styles.queueHeaderRow}>
+                            <Text style={styles.queueOrderId}>{displayId}</Text>
+                            <View style={styles.processPill}>
+                              <Text style={styles.processPillText}>{badge}</Text>
+                            </View>
+                          </View>
+                          <Text style={styles.queueCustomerText}>
+                            {custName} • ₹{amt}
+                          </Text>
+                        </View>
+
+                        <Pressable
+                          style={styles.viewOrderBtn}
+                          onPress={() => setSelectedOrderModal({ ...ord, id: displayId, customer_name: custName, total_amount: amt, status: ord.status || 'placed' })}
+                        >
+                          <Text style={styles.viewOrderBtnText}>View</Text>
+                        </Pressable>
+                      </View>
+                    );
+                  })
+                )}
               </View>
             </View>
           </View>
@@ -2346,35 +2362,67 @@ export default function AdminPortalScreen({ initialTab }: { initialTab?: string 
 
             {/* Status Update Actions */}
             <View style={styles.modalActionsRow}>
-              <Pressable
-                style={[styles.modalActionBtn, { backgroundColor: '#FEF3C7' }]}
-                onPress={() =>
-                  handleUpdateOrderStatus(selectedOrderModal.id || selectedOrderModal.rawId, 'preparing')
-                }
-              >
-                <Text style={[styles.modalActionText, { color: '#D97706' }]}>🍳 Preparing</Text>
-              </Pressable>
+              {(() => {
+                const currentStatus = String(selectedOrderModal?.status || 'placed').toLowerCase();
+                return (
+                  <>
+                    {(currentStatus === 'placed' || currentStatus === 'pending') && (
+                      <Pressable
+                        style={[styles.modalActionBtn, { backgroundColor: '#FEF3C7' }]}
+                        onPress={() =>
+                          handleUpdateOrderStatus(selectedOrderModal.id || selectedOrderModal.rawId, 'preparing')
+                        }
+                      >
+                        <Text style={[styles.modalActionText, { color: '#D97706' }]}>🍳 Mark Preparing</Text>
+                      </Pressable>
+                    )}
 
-              <Pressable
-                style={[styles.modalActionBtn, { backgroundColor: '#EFF6FF' }]}
-                onPress={() =>
-                  handleUpdateOrderStatus(
-                    selectedOrderModal.id || selectedOrderModal.rawId,
-                    'out_for_delivery'
-                  )
-                }
-              >
-                <Text style={[styles.modalActionText, { color: '#0071E3' }]}>🛵 Delivering</Text>
-              </Pressable>
+                    {(currentStatus === 'confirmed' || currentStatus === 'preparing') && (
+                      <Pressable
+                        style={[styles.modalActionBtn, { backgroundColor: '#EFF6FF' }]}
+                        onPress={() =>
+                          handleUpdateOrderStatus(
+                            selectedOrderModal.id || selectedOrderModal.rawId,
+                            'out_for_delivery'
+                          )
+                        }
+                      >
+                        <Text style={[styles.modalActionText, { color: '#0071E3' }]}>🛵 Out for Delivery</Text>
+                      </Pressable>
+                    )}
 
-              <Pressable
-                style={[styles.modalActionBtn, { backgroundColor: '#ECFDF5' }]}
-                onPress={() =>
-                  handleUpdateOrderStatus(selectedOrderModal.id || selectedOrderModal.rawId, 'delivered')
-                }
-              >
-                <Text style={[styles.modalActionText, { color: '#059669' }]}>✅ Delivered</Text>
-              </Pressable>
+                    {currentStatus === 'out_for_delivery' && (
+                      <Pressable
+                        style={[styles.modalActionBtn, { backgroundColor: '#ECFDF5' }]}
+                        onPress={() =>
+                          handleUpdateOrderStatus(selectedOrderModal.id || selectedOrderModal.rawId, 'delivered')
+                        }
+                      >
+                        <Text style={[styles.modalActionText, { color: '#059669' }]}>✅ Mark Delivered</Text>
+                      </Pressable>
+                    )}
+
+                    {!['delivered', 'cancelled', 'returned', 'failed_delivery'].includes(currentStatus) && (
+                      <Pressable
+                        style={[styles.modalActionBtn, { backgroundColor: '#FEE2E2' }]}
+                        onPress={() =>
+                          handleUpdateOrderStatus(selectedOrderModal.id || selectedOrderModal.rawId, 'cancelled')
+                        }
+                      >
+                        <Text style={[styles.modalActionText, { color: '#DC2626' }]}>❌ Cancel Order</Text>
+                      </Pressable>
+                    )}
+
+                    {['delivered', 'cancelled', 'returned', 'failed_delivery'].includes(currentStatus) && (
+                      <View style={[styles.modalActionBtn, { backgroundColor: '#F3F4F6', flex: 1, alignItems: 'center' }]}>
+                        <Text style={[styles.modalActionText, { color: '#6B7280' }]}>
+                          STATUS: {currentStatus.toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                  </>
+                );
+              })()}
             </View>
           </View>
         </View>

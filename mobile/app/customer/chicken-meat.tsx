@@ -21,6 +21,7 @@ import { ProductCard } from '../../components/ProductCard';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import { products as localProducts } from '../../data/products';
 import { get } from '../../services/api';
+import { getCloudinaryUrl } from '../../services/cloudinary';
 import { Product } from '../../types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -311,7 +312,7 @@ export default function ChickenMeatPage() {
               {chickenEggsList.length > 0 && (
                 <View style={styles.sectionCardChicken}>
                   <Image
-                    source={require('../../assets/banner-chicken-eggs.jpg')}
+                    source={{ uri: getCloudinaryUrl('banner-chicken-eggs.jpg') }}
                     style={styles.sectionBannerImage}
                     resizeMode="cover"
                   />
@@ -336,7 +337,7 @@ export default function ChickenMeatPage() {
               {meatList.length > 0 && (
                 <View style={styles.sectionCardMeat}>
                   <Image
-                    source={require('../../assets/banner-fresh-meat-section.jpg')}
+                    source={{ uri: getCloudinaryUrl('banner-fresh-meat-section.jpg') }}
                     style={styles.sectionBannerImage}
                     resizeMode="cover"
                   />

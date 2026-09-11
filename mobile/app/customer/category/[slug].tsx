@@ -24,7 +24,7 @@ import { useCart } from '../../../context/CartContext';
 import { useToast } from '../../../context/ToastContext';
 import { COLORS, SPACING, SHADOWS } from '../../../constants/theme';
 import { getCanonicalSlug } from '../../../data/categories';
-import { getValidImage, optimizeImageUrl, DEFAULT_FALLBACK_IMAGE } from '../../../services/cloudinary';
+import { getCloudinaryUrl, getValidImage, optimizeImageUrl, DEFAULT_FALLBACK_IMAGE } from '../../../services/cloudinary';
 import {
   ArrowLeft,
   Search,
@@ -50,22 +50,22 @@ const CATEGORY_TOP_NAV = [
   { id: 'chocolates', label: 'Sweets', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645118/grabit_media/cadbury_silk_real.jpg', slug: 'chocolates' },
   { id: 'personal-care', label: 'Care', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645135/grabit_media/dettol_handwash_real.jpg', slug: 'personal-care' },
   { id: 'household', label: 'Household', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645057/grabit_media/surf_excel_real.jpg', slug: 'household' },
-  { id: 'tea-coffee', label: 'Tea & Coffee', image: 'https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=300', slug: 'tea-coffee' },
-  { id: 'instant-food', label: 'Instant Food', image: 'https://images.unsplash.com/photo-1612927601601-6638404737ce?w=300', slug: 'instant-food' },
+  { id: 'tea-coffee', label: 'Tea & Coffee', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645059/grabit_media/tea_coffee_hero_transparent.png', slug: 'tea-coffee' },
+  { id: 'instant-food', label: 'Instant Food', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645080/grabit_media/instant_noodles_hero_transparent.png', slug: 'instant-food' },
   { id: 'biscuits', label: 'Biscuits', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645050/grabit_media/oreo_biscuits_real.jpg', slug: 'biscuits' },
   { id: 'oil', label: 'Oils & Ghee', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645142/grabit_media/fortune_oil_real.jpg', slug: 'oil' },
   { id: 'electronics', label: 'Electronics', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645110/grabit_media/electronics_hero_transparent.png', slug: 'electronics' },
   { id: 'fashion', label: 'Fashion', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645079/grabit_media/sneakers.jpg', slug: 'fashion' },
-  { id: 'baby-care', label: 'Baby Care', image: 'https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=300', slug: 'baby-care' },
-  { id: 'pet-care', label: 'Pet Care', image: 'https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=300', slug: 'pet-care' },
-  { id: 'beauty-cosmetics', label: 'Beauty', image: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=300', slug: 'beauty-cosmetics' },
-  { id: 'health-wellness', label: 'Pharma', image: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=300', slug: 'health-wellness' },
-  { id: 'meat-seafood', label: 'Meat & Seafood', image: 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?w=300', slug: 'meat-seafood' },
-  { id: 'home-kitchen', label: 'Kitchen', image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=300', slug: 'home-kitchen' },
-  { id: 'stationery-office', label: 'Stationery', image: 'https://images.unsplash.com/photo-1583485088034-697b5bc54ccd?w=300', slug: 'stationery-office' },
-  { id: 'sports-fitness', label: 'Fitness', image: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=300', slug: 'sports-fitness' },
-  { id: 'toys-games', label: 'Toys', image: 'https://images.unsplash.com/photo-1566576912321-d58ddd7a6088?w=300', slug: 'toys-games' },
-  { id: 'pooja-needs', label: 'Pooja', image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=300', slug: 'pooja-needs' },
+  { id: 'baby-care', label: 'Baby Care', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067213/grabit_media/category_baby_care.jpg', slug: 'baby-care' },
+  { id: 'pet-care', label: 'Pet Care', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067219/grabit_media/category_pet_care.jpg', slug: 'pet-care' },
+  { id: 'beauty-cosmetics', label: 'Beauty', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067215/grabit_media/category_beauty_cosmetics.jpg', slug: 'beauty-cosmetics' },
+  { id: 'health-wellness', label: 'Pharma', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067216/grabit_media/category_health_wellness.jpg', slug: 'health-wellness' },
+  { id: 'meat-seafood', label: 'Meat & Seafood', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067218/grabit_media/category_meat_seafood.jpg', slug: 'meat-seafood' },
+  { id: 'home-kitchen', label: 'Kitchen', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067217/grabit_media/category_home_kitchen.jpg', slug: 'home-kitchen' },
+  { id: 'stationery-office', label: 'Stationery', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067224/grabit_media/category_stationery_office.jpg', slug: 'stationery-office' },
+  { id: 'sports-fitness', label: 'Fitness', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067223/grabit_media/category_sports_fitness.jpg', slug: 'sports-fitness' },
+  { id: 'toys-games', label: 'Toys', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067225/grabit_media/category_toys_games.jpg', slug: 'toys-games' },
+  { id: 'pooja-needs', label: 'Pooja', image: 'https://res.cloudinary.com/hmx3azp6/image/upload/v1789067220/grabit_media/category_pooja_needs.jpg', slug: 'pooja-needs' },
 ];
 
 interface SubCategoryConfig {
@@ -315,12 +315,12 @@ const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     bannerSubColor: '#0369A1',
     badgeBg: 'rgba(2, 132, 199, 0.15)',
     badgeTextColor: '#0284C7',
-    bannerImage: 'https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=500&q=80',
+    bannerImage: getCloudinaryUrl('category-baby-care.jpg'),
     subcategories: [
       { id: 'All', label: 'All' },
-      { id: 'Diapers & Wipes', label: 'Diapers & Wipes', image: 'https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=300&q=80' },
-      { id: 'Baby Bath & Skin', label: 'Baby Bath & Skin', image: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=300&q=80' },
-      { id: 'Baby Food & Cereal', label: 'Baby Food & Cereal', image: 'https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=300&q=80' },
+      { id: 'Diapers & Wipes', label: 'Diapers & Wipes', image: getCloudinaryUrl('category-baby-care.jpg') },
+      { id: 'Baby Bath & Skin', label: 'Baby Bath & Skin', image: getCloudinaryUrl('category-beauty-cosmetics.jpg') },
+      { id: 'Baby Food & Cereal', label: 'Baby Food & Cereal', image: getCloudinaryUrl('category-baby-care.jpg') },
     ],
   },
   'pet-care': {
@@ -333,12 +333,12 @@ const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     bannerSubColor: '#C2410C',
     badgeBg: 'rgba(234, 88, 12, 0.15)',
     badgeTextColor: '#EA580C',
-    bannerImage: 'https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=500&q=80',
+    bannerImage: getCloudinaryUrl('category-pet-care.jpg'),
     subcategories: [
       { id: 'All', label: 'All' },
-      { id: 'Dog Food & Treats', label: 'Dog Food & Treats', image: 'https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=300&q=80' },
-      { id: 'Cat Food', label: 'Cat Food', image: 'https://images.unsplash.com/photo-1574158622682-e40e69881006?w=300&q=80' },
-      { id: 'Pet Grooming', label: 'Pet Grooming', image: 'https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=300&q=80' },
+      { id: 'Dog Food & Treats', label: 'Dog Food & Treats', image: getCloudinaryUrl('category-pet-care.jpg') },
+      { id: 'Cat Food', label: 'Cat Food', image: getCloudinaryUrl('category-pet-care.jpg') },
+      { id: 'Pet Grooming', label: 'Pet Grooming', image: getCloudinaryUrl('category-pet-care.jpg') },
     ],
   },
   'beauty-cosmetics': {
@@ -351,12 +351,12 @@ const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     bannerSubColor: '#BE123C',
     badgeBg: 'rgba(225, 29, 72, 0.15)',
     badgeTextColor: '#E11D48',
-    bannerImage: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=500&q=80',
+    bannerImage: getCloudinaryUrl('category-beauty-cosmetics.jpg'),
     subcategories: [
       { id: 'All', label: 'All' },
-      { id: 'Face Serums & Creams', label: 'Face Serums & Creams', image: 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?w=300&q=80' },
-      { id: 'Sunscreens & Cleansers', label: 'Sunscreens & Cleansers', image: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?w=300&q=80' },
-      { id: 'Makeup & Kajal', label: 'Makeup & Kajal', image: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=300&q=80' },
+      { id: 'Face Serums & Creams', label: 'Face Serums & Creams', image: getCloudinaryUrl('category-beauty-cosmetics.jpg') },
+      { id: 'Sunscreens & Cleansers', label: 'Sunscreens & Cleansers', image: getCloudinaryUrl('category-beauty-cosmetics.jpg') },
+      { id: 'Makeup & Kajal', label: 'Makeup & Kajal', image: getCloudinaryUrl('category-beauty-cosmetics.jpg') },
     ],
   },
   'health-wellness': {
@@ -369,12 +369,12 @@ const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     bannerSubColor: '#15803D',
     badgeBg: 'rgba(22, 163, 74, 0.15)',
     badgeTextColor: '#16A34A',
-    bannerImage: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=500&q=80',
+    bannerImage: getCloudinaryUrl('category-health-wellness.jpg'),
     subcategories: [
       { id: 'All', label: 'All' },
-      { id: 'Immunity & Ayurveda', label: 'Immunity & Ayurveda', image: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=300&q=80' },
-      { id: 'Vitamins & Supplements', label: 'Vitamins & Supplements', image: 'https://images.unsplash.com/photo-1584017911766-d451b3d0e843?w=300&q=80' },
-      { id: 'Pain Relief & Devices', label: 'Pain Relief & Devices', image: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=300&q=80' },
+      { id: 'Immunity & Ayurveda', label: 'Immunity & Ayurveda', image: getCloudinaryUrl('category-health-wellness.jpg') },
+      { id: 'Vitamins & Supplements', label: 'Vitamins & Supplements', image: getCloudinaryUrl('category-health-wellness.jpg') },
+      { id: 'Pain Relief & Devices', label: 'Pain Relief & Devices', image: getCloudinaryUrl('category-health-wellness.jpg') },
     ],
   },
   'meat-seafood': {
@@ -387,12 +387,12 @@ const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     bannerSubColor: '#B91C1C',
     badgeBg: 'rgba(220, 38, 38, 0.15)',
     badgeTextColor: '#DC2626',
-    bannerImage: 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?w=500&q=80',
+    bannerImage: getCloudinaryUrl('category-meat-seafood.jpg'),
     subcategories: [
       { id: 'All', label: 'All' },
-      { id: 'Fresh Chicken', label: 'Fresh Chicken', image: 'https://images.unsplash.com/photo-1604503468506-a8da13d82791?w=300&q=80' },
-      { id: 'Farm Eggs', label: 'Farm Eggs', image: 'https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?w=300&q=80' },
-      { id: 'Fish & Seafood', label: 'Fish & Seafood', image: 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?w=300&q=80' },
+      { id: 'Fresh Chicken', label: 'Fresh Chicken', image: getCloudinaryUrl('banner-chicken-eggs.jpg') },
+      { id: 'Farm Eggs', label: 'Farm Eggs', image: getCloudinaryUrl('banner-chicken-eggs.jpg') },
+      { id: 'Fish & Seafood', label: 'Fish & Seafood', image: getCloudinaryUrl('banner-fresh-meat-section.jpg') },
     ],
   },
   'home-kitchen': {
@@ -405,12 +405,12 @@ const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     bannerSubColor: '#C2410C',
     badgeBg: 'rgba(234, 88, 12, 0.15)',
     badgeTextColor: '#EA580C',
-    bannerImage: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=500&q=80',
+    bannerImage: getCloudinaryUrl('category-home-kitchen.jpg'),
     subcategories: [
       { id: 'All', label: 'All' },
-      { id: 'Cookware & Pans', label: 'Cookware & Pans', image: 'https://images.unsplash.com/photo-1584990347449-39b4b0113c51?w=300&q=80' },
-      { id: 'Bottles & Flasks', label: 'Bottles & Flasks', image: 'https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=300&q=80' },
-      { id: 'Storage & Containers', label: 'Storage & Containers', image: 'https://images.unsplash.com/photo-1584990347449-39b4b0113c51?w=300&q=80' },
+      { id: 'Cookware & Pans', label: 'Cookware & Pans', image: getCloudinaryUrl('category-home-kitchen.jpg') },
+      { id: 'Bottles & Flasks', label: 'Bottles & Flasks', image: getCloudinaryUrl('category-home-kitchen.jpg') },
+      { id: 'Storage & Containers', label: 'Storage & Containers', image: getCloudinaryUrl('category-home-kitchen.jpg') },
     ],
   },
   'stationery-office': {
@@ -423,12 +423,12 @@ const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     bannerSubColor: '#1D4ED8',
     badgeBg: 'rgba(37, 99, 235, 0.15)',
     badgeTextColor: '#2563EB',
-    bannerImage: 'https://images.unsplash.com/photo-1583485088034-697b5bc54ccd?w=500&q=80',
+    bannerImage: getCloudinaryUrl('category-stationery-office.jpg'),
     subcategories: [
       { id: 'All', label: 'All' },
-      { id: 'Notebooks & Pads', label: 'Notebooks & Pads', image: 'https://images.unsplash.com/photo-1583485088034-697b5bc54ccd?w=300&q=80' },
-      { id: 'Pens & Markers', label: 'Pens & Markers', image: 'https://images.unsplash.com/photo-1585336261026-7f41539e0ebc?w=300&q=80' },
-      { id: 'Calculators', label: 'Calculators', image: 'https://images.unsplash.com/photo-1587145820266-a5951ee6f620?w=300&q=80' },
+      { id: 'Notebooks & Pads', label: 'Notebooks & Pads', image: getCloudinaryUrl('category-stationery-office.jpg') },
+      { id: 'Pens & Markers', label: 'Pens & Markers', image: getCloudinaryUrl('category-stationery-office.jpg') },
+      { id: 'Calculators', label: 'Calculators', image: getCloudinaryUrl('category-stationery-office.jpg') },
     ],
   },
   'sports-fitness': {
@@ -441,12 +441,12 @@ const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     bannerSubColor: '#15803D',
     badgeBg: 'rgba(22, 163, 74, 0.15)',
     badgeTextColor: '#16A34A',
-    bannerImage: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=500&q=80',
+    bannerImage: getCloudinaryUrl('category-sports-fitness.jpg'),
     subcategories: [
       { id: 'All', label: 'All' },
-      { id: 'Rackets & Balls', label: 'Rackets & Balls', image: 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?w=300&q=80' },
-      { id: 'Fitness Supplements', label: 'Fitness Supplements', image: 'https://images.unsplash.com/photo-1579722821273-0f6c7d44362f?w=300&q=80' },
-      { id: 'Gym Shakers & Bottles', label: 'Gym Shakers & Bottles', image: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=300&q=80' },
+      { id: 'Rackets & Balls', label: 'Rackets & Balls', image: getCloudinaryUrl('category-sports-fitness.jpg') },
+      { id: 'Fitness Supplements', label: 'Fitness Supplements', image: getCloudinaryUrl('category-sports-fitness.jpg') },
+      { id: 'Gym Shakers & Bottles', label: 'Gym Shakers & Bottles', image: getCloudinaryUrl('category-sports-fitness.jpg') },
     ],
   },
   'toys-games': {
@@ -459,12 +459,12 @@ const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     bannerSubColor: '#7E22CE',
     badgeBg: 'rgba(147, 51, 234, 0.15)',
     badgeTextColor: '#9333EA',
-    bannerImage: 'https://images.unsplash.com/photo-1566576912321-d58ddd7a6088?w=500&q=80',
+    bannerImage: getCloudinaryUrl('category-toys-games.jpg'),
     subcategories: [
       { id: 'All', label: 'All' },
-      { id: 'Building Blocks', label: 'Building Blocks', image: 'https://images.unsplash.com/photo-1585366119957-e9730b6d0f60?w=300&q=80' },
-      { id: 'Board Games & Puzzles', label: 'Board Games & Puzzles', image: 'https://images.unsplash.com/photo-1610890716171-6b1bb98ffd09?w=300&q=80' },
-      { id: 'Diecast Cars & Tracks', label: 'Diecast Cars & Tracks', image: 'https://images.unsplash.com/photo-1566576912321-d58ddd7a6088?w=300&q=80' },
+      { id: 'Building Blocks', label: 'Building Blocks', image: getCloudinaryUrl('category-toys-games.jpg') },
+      { id: 'Board Games & Puzzles', label: 'Board Games & Puzzles', image: getCloudinaryUrl('category-toys-games.jpg') },
+      { id: 'Diecast Cars & Tracks', label: 'Diecast Cars & Tracks', image: getCloudinaryUrl('category-toys-games.jpg') },
     ],
   },
   'all': {
@@ -938,7 +938,7 @@ export default function CategoryProductsPage() {
         {/* 7. Suggest a Product Banner */}
         <View style={styles.suggestCardContainer}>
           <Image
-            source={require('../../../assets/suggest-product-3d.png')}
+            source={{ uri: getCloudinaryUrl('suggest-product-3d.png') }}
             style={styles.suggest3dGraphic}
             resizeMode="contain"
           />

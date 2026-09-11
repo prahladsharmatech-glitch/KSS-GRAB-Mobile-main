@@ -1,6 +1,17 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Pressable, Platform } from 'react-native';
-import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
+let MapView: any = null;
+let Marker: any = null;
+let PROVIDER_DEFAULT: any = null;
+
+if (Platform.OS !== 'web') {
+  try {
+    const Maps = require('react-native-maps');
+    MapView = Maps.default;
+    Marker = Maps.Marker;
+    PROVIDER_DEFAULT = Maps.PROVIDER_DEFAULT;
+  } catch {}
+}
 import { COLORS, SPACING } from '../constants/theme';
 import { MapPin, Navigation } from 'lucide-react-native';
 

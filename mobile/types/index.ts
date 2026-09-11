@@ -67,6 +67,10 @@ export interface OrderItem {
 
 export interface Order {
   id: string;
+  rawId?: string;
+  name?: string;
+  phone?: string;
+  delivery_address?: string;
   customer_name?: string;
   customer_phone?: string;
   address?: string;
@@ -92,6 +96,8 @@ export interface Order {
 export interface DeliveryAgent {
   id: string;
   name: string;
+  full_name?: string;
+  partner_id?: string;
   phone: string;
   vehicle_type: 'bike' | 'scooter' | 'ev';
   vehicle_number: string;

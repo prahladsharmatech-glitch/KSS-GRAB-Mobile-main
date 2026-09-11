@@ -8,7 +8,7 @@
   "lat": 13.014333,
   "lng": 77.646,
   "geofence_radius_meters": 5000,
-  "store_open_time": "10:00",
+  "store_open_time": "08:00",
   "store_close_time": "23:59",
   "late_grace_minutes": 30,
   "updated_at": "2026-09-01T10:19:17.380656+00:00"

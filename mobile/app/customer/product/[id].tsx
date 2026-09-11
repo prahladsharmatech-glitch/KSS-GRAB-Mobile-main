@@ -53,30 +53,9 @@ import { SearchAutocomplete } from '../../../components/SearchAutocomplete';
 
 import { getCloudinaryUrl, getValidImage, optimizeImageUrl, DEFAULT_FALLBACK_IMAGE } from '../../../services/cloudinary';
 
-const LOCAL_PRODUCT_IMAGES: Record<string, any> = {
-  'coca-cola-real.jpg': require('../../../assets/coca-cola-real.jpg'),
-  'aashirvaad-atta-real.jpg': require('../../../assets/aashirvaad-atta-real.jpg'),
-  'atta-real.jpg': require('../../../assets/aashirvaad-atta-real.jpg'),
-  'amul-butter-real.jpg': require('../../../assets/amul-butter-real.jpg'),
-  'butter-real.jpg': require('../../../assets/butter-real.jpg'),
-  'combo-munchies.jpg': require('../../../assets/combo-munchies.jpg'),
-  'cadbury-silk-real.jpg': require('../../../assets/cadbury-silk-real.jpg'),
-  'dettol-handwash-real.jpg': require('../../../assets/dettol-handwash-real.jpg'),
-  'dettol-real.jpg': require('../../../assets/dettol-handwash-real.jpg'),
-  'fortune-oil-real.jpg': require('../../../assets/fortune-oil-real.jpg'),
-  'apples-real.jpg': require('../../../assets/apples-real.jpg'),
-  'fresh-red-apples-real.jpg': require('../../../assets/apples-real.jpg'),
-};
-
 const resolveProductImage = (imageStr?: any) => {
   if (!imageStr || typeof imageStr !== 'string') return { uri: DEFAULT_FALLBACK_IMAGE };
   const clean = getValidImage(imageStr);
-  if (clean === DEFAULT_FALLBACK_IMAGE) return { uri: DEFAULT_FALLBACK_IMAGE };
-
-  const filename = clean.split('/').pop()?.split('?')[0] || '';
-  if (LOCAL_PRODUCT_IMAGES[clean]) return LOCAL_PRODUCT_IMAGES[clean];
-  if (LOCAL_PRODUCT_IMAGES[filename]) return LOCAL_PRODUCT_IMAGES[filename];
-
   return { uri: optimizeImageUrl(clean, 400) };
 };
 
@@ -203,8 +182,19 @@ export default function ProductDetailPage() {
   if (isLoading && !item) return <LoadingView message="Fetching Product Details..." />;
 
   const cartItem = cart.find((ci) => ci.product.id === item.id);
-  const qty = cartItem ? cartItem.quantity : 0;
-  const isWishlisted = isInWishlist(item.id);
+  const contextQty = cartItem ? cartItem.quantity : 0;
+  const [localQty, setLocalQty] = useState(contextQty);
+
+  useEffect(() => {
+    setLocalQty(contextQty);
+  }, [contextQty]);
+
+  const contextWishlisted = isInWishlist(item.id);
+  const [localWishlisted, setLocalWishlisted] = useState(contextWishlisted);
+
+  useEffect(() => {
+    setLocalWishlisted(contextWishlisted);
+  }, [contextWishlisted]);
 
   // Gallery image variants
   const galleryImages = [
@@ -294,7 +284,7 @@ export default function ProductDetailPage() {
         <View style={styles.topLocationRow}>
           {/* Logo */}
           <Image
-            source={require('../../../assets/grabit-logo.png')}
+            source={{ uri: getCloudinaryUrl('grabit-logo.png') }}
             style={styles.headerLogo}
             resizeMode="contain"
           />
@@ -340,15 +330,27 @@ export default function ProductDetailPage() {
 
           {/* Top Right Actions (Wishlist & Share) */}
           <View style={styles.topGalleryActions}>
-            <Pressable style={styles.galleryActionCircle} onPress={() => toggleWishlist(item)}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.galleryActionCircle,
+                pressed && { opacity: 0.7, transform: [{ scale: 0.92 }] },
+              ]}
+              onPress={() => {
+                setLocalWishlisted((prev) => !prev);
+                toggleWishlist(item);
+              }}
+            >
               <Heart
                 size={18}
-                color={isWishlisted ? '#EF4444' : '#64748B'}
-                fill={isWishlisted ? '#EF4444' : 'transparent'}
+                color={localWishlisted ? '#EF4444' : '#64748B'}
+                fill={localWishlisted ? '#EF4444' : 'transparent'}
               />
             </Pressable>
             <Pressable
-              style={styles.galleryActionCircle}
+              style={({ pressed }) => [
+                styles.galleryActionCircle,
+                pressed && { opacity: 0.7, transform: [{ scale: 0.92 }] },
+              ]}
               onPress={() => showToast('Product link copied to clipboard', 'info')}
             >
               <Share2 size={18} color="#64748B" />
@@ -433,7 +435,11 @@ export default function ProductDetailPage() {
                 return (
                   <Pressable
                     key={index}
-                    style={[styles.packCard, isSelected && styles.packCardActive]}
+                    style={({ pressed }) => [
+                      styles.packCard,
+                      isSelected && styles.packCardActive,
+                      pressed && { opacity: 0.8, transform: [{ scale: 0.96 }] },
+                    ]}
                     onPress={() => setSelectedPackIndex(index)}
                   >
                     <Text style={[styles.packSizeText, isSelected && styles.packSizeTextActive]}>
@@ -540,10 +546,14 @@ export default function ProductDetailPage() {
 
           {/* Dual Action Buttons Row */}
           <View style={styles.actionButtonsRow}>
-            {qty === 0 ? (
+            {localQty === 0 ? (
               <Pressable
-                style={styles.addCartPrimaryBtn}
+                style={({ pressed }) => [
+                  styles.addCartPrimaryBtn,
+                  pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] },
+                ]}
                 onPress={() => {
+                  setLocalQty(1);
                   addToCart({ ...item, price: currentPrice, weight: selectedPack.size });
                   showToast(`Added ${selectedPack.size} to cart!`, 'success');
                 }}
@@ -554,15 +564,29 @@ export default function ProductDetailPage() {
             ) : (
               <View style={styles.actionQtyStepper}>
                 <Pressable
-                  style={styles.actionStepperBtn}
-                  onPress={() => updateQuantity(item.id, qty - 1)}
+                  style={({ pressed }) => [
+                    styles.actionStepperBtn,
+                    pressed && { opacity: 0.6, transform: [{ scale: 0.88 }] },
+                  ]}
+                  onPress={() => {
+                    const next = Math.max(0, localQty - 1);
+                    setLocalQty(next);
+                    updateQuantity(item.id, next);
+                  }}
                 >
                   <Minus size={16} color="#FFFFFF" />
                 </Pressable>
-                <Text style={styles.actionQtyVal}>{qty}</Text>
+                <Text style={styles.actionQtyVal}>{localQty}</Text>
                 <Pressable
-                  style={styles.actionStepperBtn}
-                  onPress={() => updateQuantity(item.id, qty + 1)}
+                  style={({ pressed }) => [
+                    styles.actionStepperBtn,
+                    pressed && { opacity: 0.6, transform: [{ scale: 0.88 }] },
+                  ]}
+                  onPress={() => {
+                    const next = localQty + 1;
+                    setLocalQty(next);
+                    updateQuantity(item.id, next);
+                  }}
                 >
                   <Plus size={16} color="#FFFFFF" />
                 </Pressable>
@@ -570,9 +594,13 @@ export default function ProductDetailPage() {
             )}
 
             <Pressable
-              style={styles.buyNowBtn}
+              style={({ pressed }) => [
+                styles.buyNowBtn,
+                pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] },
+              ]}
               onPress={() => {
-                if (qty === 0) {
+                if (localQty === 0) {
+                  setLocalQty(1);
                   addToCart({ ...item, price: currentPrice, weight: selectedPack.size });
                 }
                 router.push('/customer/checkout' as any);

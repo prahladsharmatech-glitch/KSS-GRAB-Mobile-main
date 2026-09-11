@@ -146,6 +146,51 @@ export default function SellerProfileScreen() {
         </View>
       </View>
 
+      {/* USER ACCOUNT DETAILS CARD */}
+      <View style={styles.sectionCard}>
+        <View style={styles.sectionHeader}>
+          <User size={18} color={COLORS.primary} style={{ marginRight: 6 }} />
+          <Text style={styles.sectionTitle}>Merchant Account & User Details</Text>
+        </View>
+
+        <View style={styles.rowTwo}>
+          <View style={{ flex: 1, marginRight: 6 }}>
+            <Text style={styles.inputLabel}>Account Owner</Text>
+            <TextInput
+              style={styles.input}
+              value={managerName}
+              onChangeText={setManagerName}
+              placeholder="John Seller"
+            />
+          </View>
+          <View style={{ flex: 1, marginLeft: 6 }}>
+            <Text style={styles.inputLabel}>Registered Phone</Text>
+            <TextInput
+              style={styles.input}
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+              placeholder="+919999900002"
+            />
+          </View>
+        </View>
+
+        <Text style={styles.inputLabel}>Account Email</Text>
+        <TextInput
+          style={styles.input}
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          placeholder="seller@grabit.local"
+        />
+
+        <View style={{ marginTop: 8, padding: 10, backgroundColor: COLORS.primaryLight || '#EEF2FF', borderRadius: 8 }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: COLORS.primary }}>
+            Account Role: Merchant Seller Partner (Verified Cloud Profile)
+          </Text>
+        </View>
+      </View>
+
       {/* GENERAL STORE INFO */}
       <View style={styles.sectionCard}>
         <View style={styles.sectionHeader}>
@@ -277,6 +322,15 @@ export default function SellerProfileScreen() {
           </View>
         </View>
       </View>
+
+      {/* SAVE PROFILE BUTTON */}
+      <Pressable style={styles.saveBtn} onPress={handleSaveProfile} disabled={isSaving}>
+        {isSaving ? (
+          <ActivityIndicator color="#FFFFFF" />
+        ) : (
+          <Text style={styles.saveBtnText}>Save Profile & Account Details</Text>
+        )}
+      </Pressable>
 
       {/* LOGOUT BUTTON */}
       <Pressable style={styles.logoutBtn} onPress={handleLogout}>
