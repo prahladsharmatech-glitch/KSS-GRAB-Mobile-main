@@ -169,67 +169,37 @@ export default function LoginScreen() {
 
     const demoUser = knownDemoMap[fullPhone];
     if (demoUser) {
-      const token = `demo-${demoUser.role}-token`;
-      let userObj: any = {
-        id:
-          demoUser.role === 'admin'
-            ? '1'
-            : demoUser.role === 'seller'
-            ? '2'
-            : demoUser.role === 'delivery_agent'
-            ? fullPhone === '+919999900003'
-              ? 'd7e8f9a0-b1c2-3d4e-5f6a-7b8c9d0e1f2a'
-              : 'd7e8f9a0-b1c2-3d4e-5f6a-7b8c9d0e1f2b'
-            : '4',
-        role: demoUser.role,
-        full_name: demoUser.name,
-        name: demoUser.name,
-        phone: fullPhone,
-        email: `${demoUser.role}@grabit.local`,
-        partnerVerified: true,
-        biometricsDone: true,
-        verification_status: 'ADMIN_VERIFIED',
-        verified_by_admin: true,
-      };
+      try {
+        const verified: any = await post('/auth/verify', { phone: fullPhone, otp });
+        if (verified?.needs_profile) {
+          setStep('profile');
+          setBusy(false);
+          return;
+        }
+        if (verified?.access_token && verified?.user) {
+          await finishLogin(verified.user, verified.access_token);
+          return;
+        }
+        throw new Error('Portal login failed. Please request a new OTP.');
+      } catch (err: any) {
+        if (!__DEV__) {
+          setError(err?.message || 'Portal login failed. Please check your OTP and try again.');
+          return;
+        }
 
-      if (fullPhone === '+919999900003' || demoUser.name === 'Karthik Rider') {
-        userObj = {
-          ...userObj,
-          vehicle_type: 'TVS iQube Electric Scooter',
-          plate_number: 'KA-05-EX-9921',
-          license_number: 'DL-2024-88712',
-          insuranceNo: 'POL-BAJAJ-77182',
-          pucNo: 'PUC-KA05-110291',
-          clearances: {
-            dlVerified: true,
-            insuranceVerified: true,
-            pucVerified: true,
-            bgCheckVerified: true,
-          },
+        const token = `demo-${demoUser.role}-token`;
+        const userObj: UserProfile = {
+          id: demoUser.role === 'seller' ? '2' : demoUser.role === 'delivery_agent' ? 'rider-1' : '1',
+          role: demoUser.role,
+          full_name: demoUser.name,
+          name: demoUser.name,
+          phone: fullPhone,
+          email: `${demoUser.role}@grabit.local`,
         };
-      } else if (fullPhone === '+919080841727' || demoUser.name === 'Thabee') {
-        userObj = {
-          ...userObj,
-          vehicle_type: 'Ather 450X EV Scooter',
-          plate_number: 'KA 05 EQ 4421',
-          license_number: 'DL-KA-05-2024009182',
-          insuranceNo: 'POL-HDFC-99201',
-          pucNo: 'PUC-KA05-882190',
-          clearances: {
-            dlVerified: true,
-            insuranceVerified: true,
-            pucVerified: true,
-            bgCheckVerified: true,
-          },
-        };
+        await finishLogin(userObj, token);
+      } finally {
+        setBusy(false);
       }
-
-      // Non-blocking background sync with backend
-      post('/auth/verify', { phone: fullPhone, otp }).catch(() => {});
-
-      await finishLogin(userObj, token);
-      setBusy(false);
-      return;
     }
 
     // Regular verification

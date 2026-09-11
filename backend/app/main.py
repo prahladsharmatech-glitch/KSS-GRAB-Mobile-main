@@ -1844,6 +1844,14 @@ async def orders(
     start_idx = max(0, (page - 1) * limit)
     return combined[start_idx:start_idx + limit]
 
+@router.get("/orders/stream")
+@router.get("/orders/stream/")
+async def orders_sse_stream(request: Request, authorization: str | None = Header(default=None)):
+    """Server-Sent Events stream for real-time seller order updates."""
+    if EventSourceResponse is None:
+        return await orders(phone=None, authorization=authorization)
+    return EventSourceResponse(_orders_sse_generator(request, authorization))
+
 @router.get("/orders/{order_id}")
 @router.get("/orders/{order_id}/")
 async def get_order_by_id(
@@ -7181,15 +7189,6 @@ async def _orders_sse_generator(request: Request, authorization: str | None):
             logging.warning(f"SSE orders_generator error: {err}")
             yield {"event": "error", "data": json.dumps({"error": str(err)})}
         await asyncio.sleep(3)
-
-@router.get("/orders/stream")
-@router.get("/orders/stream/")
-async def orders_sse_stream(request: Request, authorization: str | None = Header(default=None)):
-    """Server-Sent Events stream for real-time seller order updates. Works on Vercel serverless."""
-    if EventSourceResponse is None:
-        # Fallback: return current snapshot as JSON if sse-starlette not installed
-        return await orders(phone=None, authorization=authorization)
-    return EventSourceResponse(_orders_sse_generator(request, authorization))
 
 async def _delivery_sse_generator(request: Request, user):
     """Generator that pushes rider-specific active order updates every 3s via SSE."""

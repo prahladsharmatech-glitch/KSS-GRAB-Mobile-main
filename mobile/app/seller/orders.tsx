@@ -242,25 +242,29 @@ export default function SellerOrdersScreen() {
     }
   };
 
-  const handleUpdateStatus = async (orderId: string, newStatus: Order['status']) => {
+  const handleUpdateStatus = async (order: Order, newStatus: Order['status']) => {
+    const displayOrderId = order.id;
+    const backendOrderId = order.rawId || order.id;
     let previousOrders: Order[] = [];
     setOrders((prev) => {
       previousOrders = prev;
-      const updated = prev.map((o) => (o.id === orderId || o.rawId === orderId ? { ...o, status: newStatus } : o));
+      const updated = prev.map((o) => (o.id === displayOrderId || o.rawId === backendOrderId || o.rawId === displayOrderId)
+        ? { ...o, status: newStatus }
+        : o);
       setItem('grabit_seller_orders', updated).catch(() => {});
       return updated;
     });
-    showToast(`Order #${orderId} updated to ${newStatus}`, 'success');
+    showToast(`Order #${displayOrderId} updated to ${newStatus}`, 'success');
 
     try {
-      await patch(`/orders/${encodeURIComponent(orderId)}/status`, { status: newStatus.toLowerCase() });
+      await patch(`/orders/${encodeURIComponent(backendOrderId)}/status`, { status: newStatus.toLowerCase() });
       invalidateOrdersCache();
     } catch (err: any) {
       if (previousOrders.length > 0) {
         setOrders(previousOrders);
         setItem('grabit_seller_orders', previousOrders).catch(() => {});
       }
-      showToast(err?.message || `Failed to update status for order #${orderId}`, 'error');
+      showToast(err?.message || `Failed to update status for order #${displayOrderId}`, 'error');
     }
   };
 
@@ -287,7 +291,7 @@ export default function SellerOrdersScreen() {
     setOrders((prev) => {
       previousOrders = prev;
       const updated = prev.map((o) =>
-        o.id === order.id || o.rawId === order.id
+        o.id === order.id || o.rawId === order.id || o.rawId === order.rawId
           ? {
               ...o,
               rider_id: rider.id,
@@ -316,6 +320,27 @@ export default function SellerOrdersScreen() {
         setItem('grabit_seller_orders', previousOrders).catch(() => {});
       }
       showToast(err?.message || `Failed to assign rider to order #${order.id}`, 'error');
+    }
+  };
+
+  const handleHandover = async (order: Order) => {
+    const riderId = order.rider_id || order.delivery_agent_id;
+    if (!riderId) {
+      setSelectedReassignOrder(order);
+      showToast('Select a rider before handing over this order', 'info');
+      return;
+    }
+
+    try {
+      await post(`/orders/${encodeURIComponent(order.rawId || order.id)}/assign`, {
+        delivery_agent_id: riderId,
+        rider_name: order.rider_name || 'Assigned Delivery Agent',
+      });
+      invalidateOrdersCache();
+      refreshOrders();
+      showToast('Order handed over to the rider', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to hand over order', 'error');
     }
   };
 
@@ -876,7 +901,7 @@ export default function SellerOrdersScreen() {
                     {item.status === 'PLACED' && (
                       <Pressable
                         style={styles.acceptBtn}
-                        onPress={() => handleUpdateStatus(item.id, 'PREPARING')}
+                        onPress={() => handleUpdateStatus(item, 'PREPARING')}
                       >
                         <PackageCheck size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
                         <Text style={styles.actionBtnText}>Accept & Pack</Text>
@@ -886,7 +911,7 @@ export default function SellerOrdersScreen() {
                     {item.status === 'PREPARING' && (
                       <Pressable
                         style={styles.readyBtn}
-                        onPress={() => handleUpdateStatus(item.id, 'READY_FOR_PICKUP')}
+                        onPress={() => handleUpdateStatus(item, 'READY_FOR_PICKUP')}
                       >
                         <CheckCircle size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
                         <Text style={styles.actionBtnText}>Mark Ready for Pickup</Text>
@@ -896,7 +921,7 @@ export default function SellerOrdersScreen() {
                     {item.status === 'READY_FOR_PICKUP' && (
                       <Pressable
                         style={styles.dispatchBtn}
-                        onPress={() => handleUpdateStatus(item.id, 'OUT_FOR_DELIVERY')}
+                        onPress={() => handleHandover(item)}
                       >
                         <Truck size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
                         <Text style={styles.actionBtnText}>Handover Rider</Text>
