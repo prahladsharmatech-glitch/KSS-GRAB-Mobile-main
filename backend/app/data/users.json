@@ -66,10 +66,9 @@
     "license_number": "DL-2024-88712",
     "partnerVerified": true,
     "biometricsDone": true,
-    "last_active_at": "2026-09-11T15:35:19.669554+05:30",
+    "last_active_at": "2026-09-11T13:00:30.817526+05:30",
     "created_at": "2026-01-05T09:30:00Z",
-    "battery_low": false,
-    "shift_started_at": "2026-09-11T00:40:12.367126+05:30",
+    "shift_started_at": "2026-09-11T13:00:30.817526+05:30",
     "arrived_late_today": true,
     "shift_sessions": [
       {
@@ -93,20 +92,12 @@
         "ended_at": "2026-09-04T21:39:24.432349+05:30"
       },
       {
-        "started_at": "2026-09-10T18:57:07.174569+05:30",
-        "ended_at": "2026-09-10T23:59:59+05:30"
-      },
-      {
-        "started_at": "2026-09-11T00:40:12.367126+05:30",
-        "ended_at": "2026-09-11T15:31:01.196721+05:30"
-      },
-      {
-        "started_at": "2026-09-11T15:33:17.131572+05:30",
-        "ended_at": "2026-09-11T15:35:19.669554+05:30"
+        "started_at": "2026-09-11T13:00:30.817526+05:30",
+        "ended_at": null
       }
     ],
-    "presence_status": "ABSENT",
-    "status": "ABSENT",
+    "presence_status": "PRESENT",
+    "status": "PRESENT",
     "verification_status": "VERIFIED",
     "lat": 13.014340336374694,
     "lng": 77.64603885962421,

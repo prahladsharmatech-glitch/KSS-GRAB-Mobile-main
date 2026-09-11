@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, Pressable, Switch, StyleSheet, ActivityIndicator, RefreshControl, Modal } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
-import { get, post } from '../../services/api';
+import { get, post, invalidateOrdersCache } from '../../services/api';
+import { useRealtimeOrders } from '../../services/realtimeOrders';
 import { DeliveryAgent } from '../../types';
 import { useToast } from '../../context/ToastContext';
 import { useRiderDuty } from '../../context/RiderDutyContext';
@@ -67,32 +68,65 @@ export default function RiderDashboardScreen() {
     return `${m}m Active`;
   };
 
-  const fetchData = useCallback(async () => {
-    try {
-      // Fetch active orders & pending offer for this rider
-      const activeRes = await get('/delivery/active?include_offer=true').catch(() => null);
-      if (activeRes) {
-        const orders = Array.isArray(activeRes) ? activeRes : (activeRes.orders || []);
-        // Find the first active order assigned to this rider
-        const active = orders.find((o: any) => {
-          const st = String(o.status || '').toLowerCase();
-          return st !== 'delivered' && st !== 'cancelled' && st !== 'failed_delivery';
-        });
-        setActiveOrder(active || null);
+  // ── Real-time rider orders via hook ────────────────────────────────────────
+  const {
+    orders: liveOrders,
+    loading: ordersLoading,
+    refresh: refreshOrders,
+  } = useRealtimeOrders('rider');
 
-        if (activeRes.pending_offer && activeRes.pending_offer.has_offer && activeRes.pending_offer.offer) {
-          setPendingOffer(activeRes.pending_offer.offer);
-        } else {
-          setPendingOffer(null);
-        }
+  // Derive active order from live orders stream
+  useEffect(() => {
+    const active = liveOrders.find((o: any) => {
+      const st = String(o.status || '').toLowerCase();
+      return st !== 'delivered' && st !== 'cancelled' && st !== 'failed_delivery';
+    });
+    setActiveOrder(active || null);
+    setLoading(ordersLoading);
+  }, [liveOrders, ordersLoading]);
+
+  // Fetch pending offer separately (lightweight — only called on focus/manual refresh)
+  const fetchPendingOffer = useCallback(async () => {
+    try {
+      const offerRes = await get('/delivery/pending-offer').catch(() => null);
+      if (offerRes && (offerRes as any).has_offer && (offerRes as any).offer) {
+        setPendingOffer((offerRes as any).offer);
+      } else {
+        setPendingOffer(null);
       }
     } catch {
-      // no-op — will show empty state
+      // no-op
     } finally {
-      setLoading(false);
       setRefreshing(false);
     }
   }, []);
+
+  const fetchData = useCallback(() => {
+    invalidateOrdersCache();
+    refreshOrders();
+    fetchPendingOffer();
+  }, [refreshOrders, fetchPendingOffer]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+      refreshDutyStatus();
+    }, [fetchData, refreshDutyStatus])
+  );
+
+  // Poll for pending offers every 5s (separate from order stream)
+  useEffect(() => {
+    fetchPendingOffer();
+    const interval = setInterval(fetchPendingOffer, 5000);
+    return () => clearInterval(interval);
+  }, [fetchPendingOffer]);
+
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchData();
+    refreshDutyStatus();
+  };
 
   const handleAcceptOffer = async () => {
     if (!pendingOffer) return;
@@ -101,6 +135,8 @@ export default function RiderDashboardScreen() {
       await post(`/delivery/${orderId}/accept`, {});
       showToast('Order Accepted! Navigating to Active Task...', 'success');
       setPendingOffer(null);
+      invalidateOrdersCache();
+      refreshOrders();
       router.push('/rider/active' as any);
     } catch (err: any) {
       showToast(err?.message || 'Failed to accept order', 'error');
@@ -118,26 +154,6 @@ export default function RiderDashboardScreen() {
     } catch (err: any) {
       showToast(err?.message || 'Failed to reject offer', 'error');
     }
-  };
-
-  useFocusEffect(
-    useCallback(() => {
-      fetchData();
-      refreshDutyStatus();
-    }, [fetchData, refreshDutyStatus])
-  );
-
-  useEffect(() => {
-    fetchData();
-    // Poll every 10 seconds for new assignments
-    const interval = setInterval(fetchData, 10000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
-
-  const handleRefresh = () => {
-    setRefreshing(true);
-    fetchData();
-    refreshDutyStatus();
   };
 
   const handleToggleOnline = async (val: boolean) => {

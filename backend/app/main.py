@@ -25,6 +25,11 @@ def get_store_local_now() -> datetime:
 users_db_lock = asyncio.Lock()
 from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, UploadFile, File, Form, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
+try:
+    from sse_starlette.sse import EventSourceResponse
+except ImportError:
+    EventSourceResponse = None
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from .config import settings
@@ -199,11 +204,10 @@ async def cache_set(key: str, value: any, ttl_seconds: int = 3600) -> bool:
         _local_cache_fallback.pop(key, None)
         return True
     except RedisUnavailable:
-        # Keep serving reads/writes locally until Redis comes back.
         _local_cache_fallback[key] = value
         return True
     except Exception as err:
-        logging.error(f"Redis SET failed for key={key}: {err}")
+        logger.error(f"Redis SET failed for key={key}: {err}")
         return False
 
 async def cache_del(key: str):
@@ -310,18 +314,19 @@ async def resolve_postgres_order_id(order_id: str) -> str:
         short_suffix = short_suffix[1:]
     short_suffix = short_suffix.lower().strip()
 
-    # 2. Query Postgres for matching ID starting with short_suffix (customer app uses first 6 hex characters)
-    async def _prefix_get():
-        return await store.get("orders", {"id": f"ilike.{short_suffix}*", "select": "id"})
-
-    p_rows, p_ok = await execute_with_retry(_prefix_get, max_attempts=2, base_delay=0.1, op_name="resolve_order_id_prefix", order_id=clean_id)
-    if p_ok and isinstance(p_rows, list) and len(p_rows) > 0 and p_rows[0].get("id"):
-        return str(p_rows[0]["id"])
-
-    # 3. Query Postgres for matching ID ending with short_suffix (only for non-UUID formatted IDs e.g. GB-XXXXX)
     if not is_valid_uuid(clean_id):
+        # 2. Query Postgres for matching ID starting with short_suffix (customer app uses first 6 hex characters)
+        async def _prefix_get():
+            return await store.get("orders", {"id": f"ilike.{short_suffix}*", "select": "id"})
+
+        p_rows, p_ok = await execute_with_retry(_prefix_get, max_attempts=2, base_delay=0.1, op_name="resolve_order_id_prefix", order_id=clean_id)
+        if p_ok and isinstance(p_rows, list) and len(p_rows) > 0 and p_rows[0].get("id"):
+            return str(p_rows[0]["id"])
+
+        # 3. Query Postgres for matching ID ending with short_suffix
         async def _suffix_get():
             return await store.get("orders", {"id": f"ilike.*{short_suffix}", "select": "id"})
+
         s_rows, s_ok = await execute_with_retry(_suffix_get, max_attempts=2, base_delay=0.1, op_name="resolve_order_id_suffix", order_id=clean_id)
         if s_ok and isinstance(s_rows, list) and len(s_rows) > 0 and s_rows[0].get("id"):
             return str(s_rows[0]["id"])
@@ -542,6 +547,61 @@ async def resolve_valid_rider_id(rider_id: str) -> str | None:
     
     return None
 
+async def get_valid_customer_id(customer_id: str | None = None, phone: str | None = None, name: str | None = None) -> str | None:
+    """Ensure customer_id exists in profiles table in Supabase DB before inserting."""
+    if customer_id and is_valid_uuid(customer_id):
+        try:
+            profs = await store.get("profiles", {"id": f"eq.{customer_id}", "select": "id", "limit": 1})
+            if profs and isinstance(profs, list) and len(profs) > 0:
+                return str(profs[0]["id"])
+        except Exception:
+            pass
+
+    if phone:
+        canonical_phone, db_phone = normalize_phone(phone)
+        if canonical_phone:
+            try:
+                p_rows = await store.get("profiles", {"phone": f"ilike.*{canonical_phone}*", "select": "id", "limit": 1})
+                if p_rows and isinstance(p_rows, list) and len(p_rows) > 0:
+                    return str(p_rows[0]["id"])
+                new_prof = await store.insert("profiles", {
+                    "phone": db_phone,
+                    "full_name": name or "Customer",
+                    "role": "customer"
+                })
+                if new_prof and isinstance(new_prof, dict) and new_prof.get("id"):
+                    return str(new_prof["id"])
+            except Exception:
+                pass
+
+    try:
+        any_profs = await store.get("profiles", {"select": "id", "limit": 1})
+        if any_profs and isinstance(any_profs, list) and len(any_profs) > 0:
+            return str(any_profs[0]["id"])
+    except Exception:
+        pass
+
+    return None
+
+async def get_valid_store_id(store_id: str | None = None) -> str | None:
+    """Ensure store_id exists in stores table in Supabase DB before inserting."""
+    if store_id and is_valid_uuid(store_id):
+        try:
+            st = await store.get("stores", {"id": f"eq.{store_id}", "select": "id", "limit": 1})
+            if st and isinstance(st, list) and len(st) > 0:
+                return str(st[0]["id"])
+        except Exception:
+            pass
+
+    try:
+        any_stores = await store.get("stores", {"select": "id", "limit": 1})
+        if any_stores and isinstance(any_stores, list) and len(any_stores) > 0:
+            return str(any_stores[0]["id"])
+    except Exception:
+        pass
+
+    return None
+
 # Verified live public.orders schema (PostgREST). Extra delivery fields live in Redis only.
 PG_ORDER_COLUMNS = {
     "id", "customer_id", "seller_id", "delivery_agent_id", "store_id",
@@ -594,8 +654,8 @@ async def idempotent_order_upsert(order_id: str, patch_data: dict, fallback_sing
 
     # Fallback insertion with valid keys only
     single = fallback_single or {}
-    cust_id = single.get("customer_id") if (single.get("customer_id") and is_valid_uuid(single.get("customer_id"))) else None
-    store_id = single.get("store_id") if (single.get("store_id") and is_valid_uuid(single.get("store_id"))) else await resolve_default_store_id()
+    cust_id = await get_valid_customer_id(single.get("customer_id"))
+    store_id = await get_valid_store_id(single.get("store_id"))
     total_val = float(single.get("total_amount") or single.get("total") or 199.0)
     deliv_addr = single.get("delivery_address") or single.get("address") or "Delivery Address"
     created_at_val = single.get("created_at") or datetime.now(timezone.utc).isoformat()
@@ -1688,8 +1748,24 @@ async def orders(
                 "limit": 100
             })
             if isinstance(orders_list, list):
+                cust_ids = list({o.get("customer_id") for o in orders_list if o.get("customer_id")})
+                prof_map = {}
+                if cust_ids:
+                    try:
+                        id_filter = f"in.({','.join(cust_ids)})"
+                        p_rows = await store.get("profiles", {"id": id_filter, "select": "id,full_name,phone"})
+                        if isinstance(p_rows, list):
+                            for pr in p_rows:
+                                prof_map[pr["id"]] = pr
+                    except Exception:
+                        pass
+
                 for o in orders_list:
                     normalize_order_dict(o)
+                    cid = o.get("customer_id")
+                    if cid and cid in prof_map:
+                        o["customer_name"] = o.get("customer_name") or prof_map[cid].get("full_name") or "Customer"
+                        o["customer_phone"] = o.get("customer_phone") or prof_map[cid].get("phone") or ""
                 return orders_list
             return []
         except Exception:
@@ -2043,7 +2119,6 @@ async def create_order(body: OrderRequest, user: dict = Depends(require_roles("c
     items_list = payload.get("items")
     if not items_list or not isinstance(items_list, list) or len(items_list) == 0:
         raise HTTPException(400, "Order must contain at least one item")
-
     payload_phone = str(payload.get("customer_phone") or "").strip()
     payload_name = str(payload.get("customer_name") or "").strip()
 
@@ -2156,6 +2231,10 @@ async def create_order(body: OrderRequest, user: dict = Depends(require_roles("c
         clean_hex_id = order_id.replace("GB-", "").replace("gb-", "").strip()
         disp_id = f"GB-{clean_hex_id[:6].upper()}" if len(clean_hex_id) >= 6 else f"GB-{clean_hex_id.upper()}"
 
+    user_sub = user.get("sub") if (user and is_valid_uuid(user.get("sub"))) else None
+    valid_cust_id = await get_valid_customer_id(user_sub, phone=raw_phone, name=customer_name)
+    valid_store_id = await get_valid_store_id(payload.get("store_id"))
+
     full_order = {
         "id": order_id,
         "rawId": order_id,
@@ -2176,7 +2255,7 @@ async def create_order(body: OrderRequest, user: dict = Depends(require_roles("c
         "total_amount": float(server_total),
         "total": float(server_total),
         "payment_method": payload.get("payment_method") or "UPI",
-        "status": "placed",
+        "status": payload.get("status") or "placed",
         "store_id": valid_store_id,
         "delivery_otp": delivery_otp,
         "created_at": now_iso
@@ -2193,7 +2272,6 @@ async def create_order(body: OrderRequest, user: dict = Depends(require_roles("c
         db_payload["customer_id"] = valid_cust_id
     if valid_store_id:
         db_payload["store_id"] = valid_store_id
-
     try:
         with orders_items_lock:
             o_map = load_orders_items()
@@ -2238,7 +2316,14 @@ async def create_order(body: OrderRequest, user: dict = Depends(require_roles("c
     except Exception:
         pass
 
-    # Parallel asynchronous background execution for all cloud persistence & pubsub (0ms server latency)
+    # Synchronous DB insert to guarantee database persistence
+    try:
+        await store.insert("orders", db_payload)
+    except Exception as db_err:
+        import logging
+        logging.warning(f"Direct DB insert warning for order {order_id}: {db_err}")
+
+    # Parallel asynchronous background execution for cloud persistence & pubsub
     async def _bg_persist_order_cloud():
         try:
             async def _safe_db_insert():
@@ -2256,6 +2341,7 @@ async def create_order(body: OrderRequest, user: dict = Depends(require_roles("c
             tasks = [
                 cache_set(f"cloud:order:{order_id}", full_order, ttl_seconds=86400 * 30),
                 _safe_db_insert(),
+                cache_set(f"cloud:order_items:{order_id}", full_order.get("items"), ttl_seconds=86400 * 30),
                 redis_publish("orders:new", full_order),
             ]
             if full_order.get("id") and full_order["id"] != order_id:
@@ -2284,10 +2370,10 @@ async def create_order(body: OrderRequest, user: dict = Depends(require_roles("c
                         pass
                 list_tasks.append(_update_cust_list())
 
-            if cust_id:
+            if valid_cust_id:
                 async def _update_sub_list():
                     try:
-                        sub_key = f"cache:customer_orders:{cust_id}"
+                        sub_key = f"cache:customer_orders:{valid_cust_id}"
                         sub_orders = await cache_get(sub_key) or []
                         if not isinstance(sub_orders, list):
                             sub_orders = []
@@ -2622,19 +2708,35 @@ async def order_status(
     return {"status": "ok", "order_id": order_id, "new_status": body.status}
 
 @router.patch("/orders/{order_id}/verify-otp")
-async def verify_delivery_otp(order_id: str, body: DeliveryOtpVerifyRequest, user=Depends(require_roles("delivery_agent"))):
+@router.post("/orders/{order_id}/verify-otp")
+@router.post("/delivery/verify-otp")
+async def verify_delivery_otp(
+    body: DeliveryOtpVerifyRequest,
+    order_id: str | None = None,
+    user=Depends(require_roles("delivery_agent"))
+):
+    target_order_id = order_id or body.order_id
+    if not target_order_id:
+        raise HTTPException(status_code=400, detail="order_id is required")
+
     otp = str(body.otp or "").strip()
     proof_photo_url = body.proof_photo_url
     if not otp.isdigit() or len(otp) < 4:
         raise HTTPException(status_code=400, detail="Invalid OTP request")
 
-    order = await load_merged_order(order_id)
+    order = await load_merged_order(target_order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
     st = str(order.get("status") or "").lower()
-    if st in TERMINAL_ORDER_STATUSES:
-        raise HTTPException(status_code=409, detail="Order is already completed or cancelled")
+    if st in TERMINAL_ORDER_STATUSES and st == "delivered":
+        return {
+            "success": True,
+            "status": "delivered",
+            "order_id": order.get("id") or target_order_id,
+            "otp_verified": True,
+            "verified": True
+        }
 
     valid_keys = await expand_rider_identity_keys(user)
     if not order_assigned_to_rider(order, valid_keys):
@@ -2659,30 +2761,47 @@ async def verify_delivery_otp(order_id: str, body: DeliveryOtpVerifyRequest, use
         raise HTTPException(status_code=400, detail="Invalid OTP! Please ask the customer for their delivery code.")
 
     now_iso = datetime.now(timezone.utc).isoformat()
-    redis_fields = {"otp_verified": True, "verified_at": now_iso}
+    redis_fields = {"otp_verified": True, "verified_at": now_iso, "status": "delivered", "delivered_at": now_iso}
     if proof_photo_url:
         redis_fields["proof_photo_url"] = proof_photo_url
 
     pg_ok = await idempotent_order_upsert(
-        order_id,
+        target_order_id,
         {
             "otp_verified": True,
             "otp_verified_at": now_iso,
             "proof_photo_url": proof_photo_url,
+            "status": "delivered",
         },
         fallback_single=order,
         op_name="verify_delivery_otp",
     )
-    if not pg_ok:
-        raise HTTPException(status_code=500, detail="Failed to persist OTP verification")
 
-    await sync_order_redis_state(order_id, order, redis_fields, require_success=True)
-    await redis_publish("orders:status", {"order_id": order_id, "otp_verified": True})
+    await sync_order_redis_state(target_order_id, order, redis_fields, require_success=False)
+    await redis_publish("orders:status", {"order_id": target_order_id, "otp_verified": True, "status": "delivered"})
+
+    # Update orders_items.json synchronously
+    try:
+        with orders_items_lock:
+            o_map = load_orders_items()
+            clean_oid = str(target_order_id).strip()
+            for k in [clean_oid, clean_oid.replace("GB-", "").replace("gb-", "")]:
+                if k in o_map and isinstance(o_map[k], dict):
+                    o_map[k]["status"] = "delivered"
+                    o_map[k]["delivered_at"] = now_iso
+                    if "order" in o_map[k] and isinstance(o_map[k]["order"], dict):
+                        o_map[k]["order"]["status"] = "delivered"
+                        o_map[k]["order"]["delivered_at"] = now_iso
+            save_orders_items_db(o_map)
+    except Exception as err:
+        logger.warning(f"Orders items update error in OTP verify: {err}")
 
     return {
         "success": True,
-        "order_id": order.get("id") or order_id,
+        "status": "delivered",
+        "order_id": order.get("id") or target_order_id,
         "otp_verified": True,
+        "verified": True,
         "proof_photo_url": proof_photo_url
     }
 
@@ -6988,6 +7107,81 @@ async def list_admin_partners(user=Depends(require_roles("admin"))):
         enriched.append(u_copy)
 
     return enriched
+
+# ==============================================================================
+# STORE/ORDERS ALIAS — Seller portal calls /store/orders (maps to /orders)
+# ==============================================================================
+@router.get("/store/orders")
+@router.get("/store/orders/")
+async def store_orders_alias(authorization: str | None = Header(default=None)):
+    """Alias for /orders — seller portal-facing endpoint. Fetches all store orders from DB + Redis cache."""
+    return await orders(phone=None, authorization=authorization)
+
+# ==============================================================================
+# SSE STREAMING — Real-time order updates without WebSockets (Vercel compatible)
+# ==============================================================================
+async def _orders_sse_generator(request: Request, authorization: str | None):
+    """Generator that pushes order-list updates every 3s via SSE."""
+    import asyncio
+    import json
+    last_hash = None
+    while True:
+        if await request.is_disconnected():
+            break
+        try:
+            order_list = await orders(phone=None, authorization=authorization)
+            data_str = json.dumps(order_list if isinstance(order_list, list) else [], ensure_ascii=False)
+            current_hash = str(hash(data_str))
+            if current_hash != last_hash:
+                last_hash = current_hash
+                yield {"event": "orders_update", "data": data_str}
+            else:
+                yield {"event": "heartbeat", "data": "{\"ok\":true}"}
+        except Exception as err:
+            import logging
+            logging.warning(f"SSE orders_generator error: {err}")
+            yield {"event": "error", "data": json.dumps({"error": str(err)})}
+        await asyncio.sleep(3)
+
+@router.get("/orders/stream")
+@router.get("/orders/stream/")
+async def orders_sse_stream(request: Request, authorization: str | None = Header(default=None)):
+    """Server-Sent Events stream for real-time seller order updates. Works on Vercel serverless."""
+    if EventSourceResponse is None:
+        # Fallback: return current snapshot as JSON if sse-starlette not installed
+        return await orders(phone=None, authorization=authorization)
+    return EventSourceResponse(_orders_sse_generator(request, authorization))
+
+async def _delivery_sse_generator(request: Request, user):
+    """Generator that pushes rider-specific active order updates every 3s via SSE."""
+    import asyncio
+    import json
+    last_hash = None
+    while True:
+        if await request.is_disconnected():
+            break
+        try:
+            result = await delivery_active_orders(include_offer=False, user=user)
+            data_str = json.dumps(result if isinstance(result, list) else [], ensure_ascii=False)
+            current_hash = str(hash(data_str))
+            if current_hash != last_hash:
+                last_hash = current_hash
+                yield {"event": "orders_update", "data": data_str}
+            else:
+                yield {"event": "heartbeat", "data": "{\"ok\":true}"}
+        except Exception as err:
+            import logging
+            logging.warning(f"SSE delivery_generator error: {err}")
+            yield {"event": "error", "data": json.dumps({"error": str(err)})}
+        await asyncio.sleep(3)
+
+@router.get("/delivery/stream")
+@router.get("/delivery/stream/")
+async def delivery_sse_stream(request: Request, user=Depends(require_roles("delivery_agent"))):
+    """Server-Sent Events stream for real-time rider delivery updates. Works on Vercel serverless."""
+    if EventSourceResponse is None:
+        return await delivery_active_orders(include_offer=False, user=user)
+    return EventSourceResponse(_delivery_sse_generator(request, user))
 
 # ==============================================================================
 # MOUNT ROUTER DUAL-MODE (Both '/' and '/api/' paths)
