@@ -53,7 +53,7 @@
     "phone": "+919999900003",
     "role": "delivery_agent",
     "is_online": true,
-    "agent_status": "AVAILABLE",
+    "agent_status": "ON_DELIVERY",
     "vehicle_type": "TVS iQube Electric Scooter",
     "plate_number": "KA-05-EX-9921",
     "license_number": "DL-2024-88712",

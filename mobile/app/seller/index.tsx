@@ -37,6 +37,7 @@ import {
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { get } from '../../services/api';
+import { getItem } from '../../services/storage';
 import { Order } from './orders';
 
 export default function SellerDashboardScreen() {

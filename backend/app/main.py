@@ -608,6 +608,7 @@ PG_ORDER_COLUMNS = {
     "delivery_address", "delivery_location", "status", "total", "created_at",
     "workflow_step", "otp_verified", "otp_verified_at", "proof_photo_url",
 }
+OPTIONAL_DELIVERY_COLUMNS = {"workflow_step", "otp_verified", "otp_verified_at", "proof_photo_url"}
 
 async def idempotent_order_upsert(order_id: str, patch_data: dict, fallback_single: dict | None = None, op_name: str = "order_upsert"):
     """
@@ -642,6 +643,21 @@ async def idempotent_order_upsert(order_id: str, patch_data: dict, fallback_sing
     if patch_ok and res and isinstance(res, list) and len(res) > 0:
         return True
 
+    core_patch = {k: v for k, v in safe_patch.items() if k not in OPTIONAL_DELIVERY_COLUMNS}
+    if core_patch != safe_patch:
+        async def _patch_core_op():
+            return await store.patch("orders", core_patch, {"id": f"eq.{real_id}"})
+
+        core_res, core_ok = await execute_with_retry(
+            _patch_core_op,
+            max_attempts=2,
+            base_delay=0.2,
+            op_name=f"{op_name}_core_patch",
+            order_id=real_id,
+        )
+        if core_ok and core_res and isinstance(core_res, list) and len(core_res) > 0:
+            return True
+
     # Check if row already exists in Postgres before fallback insertion
     async def _check_op():
         return await store.get("orders", {"id": f"eq.{real_id}", "select": "id"})
@@ -674,7 +690,7 @@ async def idempotent_order_upsert(order_id: str, patch_data: dict, fallback_sing
         db_insert["customer_id"] = cust_id
     if store_id:
         db_insert["store_id"] = store_id
-    for column in ("workflow_step", "otp_verified", "otp_verified_at", "proof_photo_url"):
+    for column in OPTIONAL_DELIVERY_COLUMNS:
         if column in safe_patch:
             db_insert[column] = safe_patch[column]
     if rider_val:
@@ -684,7 +700,25 @@ async def idempotent_order_upsert(order_id: str, patch_data: dict, fallback_sing
         return await store.insert("orders", db_insert)
 
     ins_res, ins_ok = await execute_with_retry(_insert_op, max_attempts=3, base_delay=0.2, op_name=f"{op_name}_insert", order_id=real_id)
-    return bool(ins_ok and ins_res)
+    if ins_ok and ins_res:
+        return True
+
+    if any(column in safe_patch for column in OPTIONAL_DELIVERY_COLUMNS):
+        core_insert = {k: v for k, v in db_insert.items() if k not in OPTIONAL_DELIVERY_COLUMNS}
+
+        async def _insert_core_op():
+            return await store.insert("orders", core_insert)
+
+        core_ins_res, core_ins_ok = await execute_with_retry(
+            _insert_core_op,
+            max_attempts=2,
+            base_delay=0.2,
+            op_name=f"{op_name}_core_insert",
+            order_id=real_id,
+        )
+        return bool(core_ins_ok and core_ins_res)
+
+    return False
 
 ALLOWED_WORKFLOW_STEPS = {"REACH_STORE", "STORE_CHECKLIST", "EN_ROUTE", "OTP_DELIVERY"}
 WORKFLOW_STATUS_MAP = {
@@ -2844,7 +2878,8 @@ async def update_delivery_step(order_id: str, body: DeliveryStepRequest, user=De
         "success": True,
         "order_id": order.get("id") or order_id,
         "step": step,
-        "status": current_status
+        "status": current_status,
+        "order_status": current_status,
     }
 
 # ==============================================================================
@@ -3125,6 +3160,10 @@ async def assign_order_to_rider(order_id: str, body: AssignOrderRequest, user=De
         import logging
         logging.warning(f"Cache lookup error in assign_order for order {order_id}: {err}")
 
+    assigned_status = normalize_status((single_cached or {}).get("status")) if isinstance(single_cached, dict) else "placed"
+    if assigned_status in ("placed", "pending", "confirmed", "preparing"):
+        assigned_status = "ready_for_pickup"
+
     now = get_store_local_now()
     offer_expires_at = (now + timedelta(seconds=60)).isoformat() if active_count == 0 else None
     offered_to_id = rider_id if active_count == 0 else None
@@ -3135,7 +3174,8 @@ async def assign_order_to_rider(order_id: str, body: AssignOrderRequest, user=De
         {
             "delivery_agent_id": rider_id,
             "offered_to_rider_id": offered_to_id,
-            "offer_expires_at": offer_expires_at
+            "offer_expires_at": offer_expires_at,
+            "status": assigned_status,
         },
         fallback_single=single_cached,
         op_name="assign_order"
@@ -3147,6 +3187,7 @@ async def assign_order_to_rider(order_id: str, body: AssignOrderRequest, user=De
         if single and isinstance(single, dict):
             single["delivery_agent_id"] = rider_id
             single["rider_name"] = rider_name
+            single["status"] = assigned_status
             single["is_queued"] = (active_count > 0)
             single["offered_to_rider_id"] = offered_to_id
             single["offer_expires_at"] = offer_expires_at
@@ -3164,6 +3205,7 @@ async def assign_order_to_rider(order_id: str, body: AssignOrderRequest, user=De
                             if co.get("id") == order_id or co.get("rawId") == order_id:
                                 co["delivery_agent_id"] = rider_id
                                 co["rider_name"] = rider_name
+                                co["status"] = assigned_status
                         await cache_set(cust_key, c_list, ttl_seconds=86400 * 30)
         return True
 
@@ -3177,6 +3219,7 @@ async def assign_order_to_rider(order_id: str, body: AssignOrderRequest, user=De
                 if qo.get("id") == order_id or qo.get("rawId") == order_id:
                     qo["delivery_agent_id"] = rider_id
                     qo["rider_name"] = rider_name
+                    qo["status"] = assigned_status
                     qo["is_queued"] = (active_count > 0)
                     qo["offered_to_rider_id"] = offered_to_id
                     qo["offer_expires_at"] = offer_expires_at
@@ -3994,12 +4037,7 @@ async def accept_delivery(order_id: str, user=Depends(require_roles("delivery_ag
     user_phone = str(user.get("phone") or "").strip()
     now = get_store_local_now()
 
-    valid_keys = {k for k in (rider_id, user_phone) if k}
-    if user_phone:
-        digits = "".join(filter(str.isdigit, str(user_phone)))
-        if digits:
-            valid_keys.add(digits)
-            valid_keys.add(f"+{digits}")
+    valid_keys = await expand_rider_identity_keys(user)
 
 
     # 1. Double assignment race prevention: Check Postgres

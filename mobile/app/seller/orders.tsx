@@ -304,11 +304,12 @@ export default function SellerOrdersScreen() {
     showToast(`Order #${order.id} assigned to ${rider.name}`, 'success');
 
     try {
-      await patch(`/orders/${encodeURIComponent(order.id)}/status`, {
-        status: nextStatus.toLowerCase(),
+      await post(`/orders/${encodeURIComponent(order.rawId || order.id)}/assign`, {
         delivery_agent_id: rider.id,
         rider_name: rider.name,
       });
+      invalidateOrdersCache();
+      refreshOrders();
     } catch (err: any) {
       if (previousOrders.length > 0) {
         setOrders(previousOrders);
