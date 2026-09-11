@@ -1,4 +1,4 @@
-const WS_BASE_URL = process.env.EXPO_PUBLIC_WS_URL || 'ws://10.0.2.2:8000/delivery/ws';
+const WS_BASE_URL = process.env.EXPO_PUBLIC_WS_URL || 'wss://kss-grabit-mobile.vercel.app/delivery/ws';
 
 export class WebSocketClient {
   private ws: WebSocket | null = null;

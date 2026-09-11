@@ -1,15 +1,9 @@
-import { Platform } from 'react-native';
 import { getSecureItem, getItem } from './storage';
 import { UserProfile } from '../types';
 
 export function getApiBaseUrl(): string {
   if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
-  if (Platform.OS === 'web') {
-    return 'http://localhost:8000/api';
-  }
-  // Physical Android/iOS device — use PC's local network IP (same Wi-Fi)
-  // Update this if your PC's IP changes: run `ipconfig` on Windows to find it
-  return 'http://192.168.88.17:8000/api';
+  return 'https://kss-grabit-mobile.vercel.app/api';
 }
 
 const API_BASE_URL = getApiBaseUrl();
