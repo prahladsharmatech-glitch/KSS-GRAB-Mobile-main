@@ -106,10 +106,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: true, needsProfile: true };
       }
 
-      const isAkashPhone = phone.includes('9360843281');
       const token = res?.access_token || 'demo-token';
       const fetchedUser = res?.user || {};
-      const resolvedName = fetchedUser.full_name || fetchedUser.name || (isAkashPhone ? 'Akash' : (requestedRole === 'seller' ? 'Partner Store' : requestedRole === 'delivery_agent' || requestedRole === 'rider' ? 'Delivery Partner' : requestedRole === 'admin' ? 'System Admin' : 'Customer User'));
+      const resolvedName = fetchedUser.full_name || fetchedUser.name || (requestedRole === 'seller' ? 'Store Manager' : requestedRole === 'delivery_agent' || requestedRole === 'rider' ? 'Delivery Partner' : requestedRole === 'admin' ? 'System Admin' : 'Customer User');
 
       const uProfile: UserProfile = {
         ...fetchedUser,
@@ -123,8 +122,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: true, needsProfile: false, user: uProfile, token };
     } catch (err: any) {
       // Fallback demo auth
-      const isAkashPhone = phone.includes('9360843281');
-      const resolvedName = isAkashPhone ? 'Akash' : (requestedRole === 'seller' ? 'Grabit Store' : requestedRole === 'delivery_agent' || requestedRole === 'rider' ? 'Delivery Partner' : requestedRole === 'admin' ? 'Admin Controller' : 'Customer User');
+      const resolvedName = requestedRole === 'seller' ? 'Store Manager' : requestedRole === 'delivery_agent' || requestedRole === 'rider' ? 'Delivery Partner' : requestedRole === 'admin' ? 'System Admin' : 'Customer User';
       const demoUser: UserProfile = {
         phone,
         role: requestedRole,

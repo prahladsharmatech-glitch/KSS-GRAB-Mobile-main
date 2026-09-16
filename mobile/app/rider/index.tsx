@@ -28,6 +28,7 @@ import {
   AlertTriangle,
 } from 'lucide-react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
+import { useAuth } from '../../context/AuthContext';
 
 interface ActiveOrder {
   id: string;
@@ -43,6 +44,7 @@ interface ActiveOrder {
 export default function RiderDashboardScreen() {
   const router = useRouter();
   const { showToast } = useToast();
+  const { user } = useAuth();
   const { isOnline, isDutyLoading, toggleDuty, refreshDutyStatus, rider: ctxRider } = useRiderDuty();
   const [breakMode, setBreakMode] = useState(false);
   const [rider, setRider] = useState<DeliveryAgent | null>(null);
@@ -240,7 +242,7 @@ export default function RiderDashboardScreen() {
     );
   }
 
-  const riderName = rider?.full_name || rider?.name || 'Karthik Rider';
+  const riderName = rider?.full_name || rider?.name || user?.full_name || user?.name || user?.phone || 'Delivery Partner';
   const riderId = rider?.partner_id || (rider?.id ? `RDR-${String(rider.id).replace(/-/g, '').slice(0, 4).toUpperCase()}` : 'RDR-700B');
   const todaysEarnings = rider?.todays_earnings ?? 0;
   const completedToday = rider?.completed_deliveries_today ?? 0;
@@ -249,8 +251,17 @@ export default function RiderDashboardScreen() {
   // Order display values from real API
   const orderDisplay = activeOrder
     ? {
+<<<<<<< HEAD
+        display_id: activeOrder.display_id || activeOrder.displayId || activeOrder.order_number || activeOrder.orderNumber,
+        displayId: activeOrder.display_id || activeOrder.displayId || activeOrder.order_number || activeOrder.orderNumber,
+        order_number: activeOrder.order_number || activeOrder.orderNumber,
+        orderNumber: activeOrder.order_number || activeOrder.orderNumber,
+        id: activeOrder.id || activeOrder.rawId || '—',
+        rawId: activeOrder.id || activeOrder.rawId,
+=======
         id: formatDisplayOrderId(activeOrder),
         rawId: (activeOrder as any).rawId || activeOrder.id,
+>>>>>>> 7d19c6569bcec01d67be66bfd6b5109beb6196b8
         customerName: activeOrder.customer_name || 'Customer',
         customerPhone: activeOrder.customer_phone || '',
         storeName: activeOrder.store_name || 'Grabit Dark Store',
@@ -377,7 +388,7 @@ export default function RiderDashboardScreen() {
           </View>
 
           <View style={styles.orderIdRow}>
-            <Text style={styles.orderId}>Order #{formatDisplayOrderId(orderDisplay)}</Text>
+            <Text style={styles.orderId}>Order #{formatDisplayOrderId(activeOrder || orderDisplay)}</Text>
           </View>
 
           {/* Prominent Customer Name Pill Row */}

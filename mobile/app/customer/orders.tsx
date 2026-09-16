@@ -228,7 +228,7 @@ export default function OrdersPage() {
       trackerStep: step,
       items: rawItems.map((it: any) => ({
         id: it.id || it.product_id,
-        name: it.name || it.product_name || 'Express Grocery Items',
+        name: it.name || it.product_name || it.title || 'Item',
         qty: Number(it.qty || it.quantity) || 1,
         price: Number(it.price || it.unit_price) || 270,
         image: it.image || it.image_url || it.raw_image || 'apples-real.jpg',
@@ -957,17 +957,7 @@ export default function OrdersPage() {
 
               {/* ── 3. ORDERED ITEMS LIST ── */}
               {(() => {
-                const modalItemsList = (selectedOrderModal?.items && selectedOrderModal.items.length > 0)
-                  ? selectedOrderModal.items
-                  : [
-                      {
-                        id: 'express-item-1',
-                        name: 'Express Grocery Items',
-                        qty: 1,
-                        price: Number(selectedOrderModal?.total) || 129,
-                        image: 'fresh-fruits-veggies-hero-transparent.png',
-                      }
-                    ];
+                const modalItemsList = selectedOrderModal?.items || [];
                 return (
                   <>
                     <Text style={styles.modalItemsSectionTitle}>

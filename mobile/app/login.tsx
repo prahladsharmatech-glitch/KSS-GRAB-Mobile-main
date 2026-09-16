@@ -108,23 +108,8 @@ export default function LoginScreen() {
 
   const finishLogin = async (userObj: any, token: string) => {
     const resolvedUser: UserProfile = { ...userObj };
-    if (resolvedUser.phone && resolvedUser.phone.includes('9360843281')) {
-      resolvedUser.name = 'Akash';
-      (resolvedUser as any).full_name = 'Akash';
-    } else if (
-      resolvedUser.phone === '+919999900003' ||
-      resolvedUser.name === 'Speedy Express Delivery' ||
-      (resolvedUser as any).full_name === 'Speedy Express Delivery'
-    ) {
-      resolvedUser.name = 'Karthik Rider';
-      (resolvedUser as any).full_name = 'Karthik Rider';
-      (resolvedUser as any).partnerVerified = true;
-      (resolvedUser as any).verification_status = 'ADMIN_VERIFIED';
-    } else if (resolvedUser.phone === '+919080841727') {
-      resolvedUser.name = 'Thabee';
-      (resolvedUser as any).full_name = 'Thabee';
-      (resolvedUser as any).partnerVerified = true;
-      (resolvedUser as any).verification_status = 'ADMIN_VERIFIED';
+    if (!resolvedUser.name && (resolvedUser as any).full_name) {
+      resolvedUser.name = (resolvedUser as any).full_name;
     }
 
     await saveSession(token, resolvedUser);
@@ -159,14 +144,12 @@ export default function LoginScreen() {
     setBusy(true);
     setError('');
 
-    // Instant demo portal access for known demo phones
-    const knownDemoMap: Record<string, { name: string; role: UserRole }> = {
-      '+919999900001': { name: 'Admin Supervisor', role: 'admin' },
-      '+919999900002': { name: 'GrabIt Supermarket', role: 'seller' },
-      '+919999900003': { name: 'Karthik Rider', role: 'delivery_agent' },
-      '+919999900004': { name: 'Rahul Sharma', role: 'customer' },
-      '+919360843281': { name: 'Akash', role: 'customer' },
-      '+919080841727': { name: 'Thabee', role: 'delivery_agent' },
+    // Quick access role mappings (roles only, names loaded dynamically from DB)
+    const knownDemoMap: Record<string, { role: UserRole }> = {
+      '+919999900001': { role: 'admin' },
+      '+919999900002': { role: 'seller' },
+      '+919999900003': { role: 'delivery_agent' },
+      '+919999900004': { role: 'customer' },
     };
 
     const demoUser = knownDemoMap[fullPhone];
@@ -567,10 +550,10 @@ export default function LoginScreen() {
               <Text style={styles.demoSectionHeader}>⚡ QUICK ACCESS — OTP REQUIRED</Text>
               <View style={styles.demoGrid}>
                 {[
-                  { label: 'Customer', icon: '🛒', phone: '+919999900004', name: 'Rahul Sharma' },
-                  { label: 'Seller', icon: '🏪', phone: '+919999900002', name: 'GrabIt Supermarket' },
-                  { label: 'Rider', icon: '🛵', phone: '+919999900003', name: 'Karthik Rider' },
-                  { label: 'Admin', icon: '🛡️', phone: '+919999900001', name: 'Admin Supervisor' },
+                  { label: 'Customer', icon: '🛒', phone: '+919999900004' },
+                  { label: 'Seller', icon: '🏪', phone: '+919999900002' },
+                  { label: 'Rider', icon: '🛵', phone: '+919999900003' },
+                  { label: 'Admin', icon: '🛡️', phone: '+919999900001' },
                 ].map((item) => {
                   const isSelected = phoneDigits === item.phone.replace('+91', '');
                   return (

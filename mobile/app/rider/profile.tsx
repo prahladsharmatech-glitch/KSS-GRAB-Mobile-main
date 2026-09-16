@@ -39,7 +39,7 @@ export default function RiderProfileScreen() {
         const u = res.user || res;
         if (u) {
           setRider(u);
-          const rName = u.full_name || u.name || user?.name || 'Karthik Rider';
+          const rName = u.full_name || u.name || user?.full_name || user?.name || user?.phone || 'Delivery Partner';
           const nameSlug = rName.toLowerCase().replace(/[^a-z0-9]/g, '.');
           const defaultUpi = u.upi_id || `${nameSlug}@okicici`;
           setUpiId(defaultUpi);
@@ -83,7 +83,7 @@ export default function RiderProfileScreen() {
     }
   };
 
-  const riderName = rider?.full_name || rider?.name || user?.name || 'Karthik Rider';
+  const riderName = rider?.full_name || rider?.name || user?.full_name || user?.name || user?.phone || 'Delivery Partner';
   const partnerId = rider?.partner_id || rider?.partnerId || (rider?.id ? `RDR-${String(rider.id).replace(/-/g, '').slice(0, 4).toUpperCase()}` : 'RDR-700B');
   const phoneDigits = String(rider?.phone || user?.phone || '9999900003').replace(/\D/g, '');
   const phoneLast4 = phoneDigits.length >= 4 ? phoneDigits.slice(-4) : '9903';

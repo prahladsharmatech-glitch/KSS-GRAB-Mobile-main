@@ -17,7 +17,7 @@ import { getItem, setItem, removeItem } from '../../services/storage';
 import { useRealtimeOrders } from '../../services/realtimeOrders';
 import { Order } from '../../types';
 export { Order };
-import { formatDisplayOrderId } from '../../utils/orderUtils';
+import { formatDisplayOrderId, isSameOrderId } from '../../utils/orderUtils';
 import { useToast } from '../../context/ToastContext';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import * as Print from 'expo-print';
@@ -118,12 +118,10 @@ export default function SellerOrdersScreen() {
 
       const custPhone = String(o.customer_phone || o.phone || '').replace(/\D/g, '');
       const last10 = custPhone.length >= 10 ? custPhone.slice(-10) : custPhone;
-      const formattedPhone = last10 ? `+91 ${last10}` : '+91 9360843281';
+      const formattedPhone = last10 ? `+91 ${last10}` : (o.customer_phone || '');
 
       const rawCustName = String(o.customer_name || o.customerName || o.name || '').trim();
-      const validCustName = (!rawCustName || rawCustName.toLowerCase() === 'customer' || rawCustName.toLowerCase() === 'guest')
-        ? 'Akash'
-        : rawCustName;
+      const validCustName = rawCustName || 'Customer User';
 
       if (normalizedItems.length === 0) {
         normalizedItems = [{
@@ -218,6 +216,95 @@ export default function SellerOrdersScreen() {
   const [selectedPackingSlip, setSelectedPackingSlip] = useState<Order | null>(null);
   const [selectedReassignOrder, setSelectedReassignOrder] = useState<Order | null>(null);
 
+<<<<<<< HEAD
+=======
+  // Helper to normalize any order object into standard seller format
+  const normalizeSellerOrder = (o: any): Order => {
+    let rawItems: any[] = [];
+    if (Array.isArray(o.items) && o.items.length > 0) {
+      rawItems = o.items;
+    } else if (typeof o.items === 'string') {
+      try { rawItems = JSON.parse(o.items); } catch { rawItems = []; }
+    }
+
+    let normalizedItems = (Array.isArray(rawItems) ? rawItems : []).map((it: any, iIdx: number) => ({
+      id: String(it.id || it.product_id || `item-${iIdx}`),
+      name: String(it.name || it.product_name || 'Ordered Product'),
+      quantity: Number(it.quantity || it.qty || 1),
+      price: Number(it.price || it.unit_price || 0),
+      image: it.image || it.image_url || 'apples-real.jpg'
+    }));
+
+    const calculatedSub = normalizedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const totalVal = Number(o.total || o.total_amount || calculatedSub || 99);
+
+    const custPhone = String(o.customer_phone || o.phone || '').replace(/\D/g, '');
+    const last10 = custPhone.length >= 10 ? custPhone.slice(-10) : custPhone;
+    const formattedPhone = last10 ? `+91 ${last10}` : '+91 9360843281';
+
+    const rawCustName = String(o.customer_name || o.customerName || o.name || '').trim();
+    const validCustName = (!rawCustName || rawCustName.toLowerCase() === 'customer' || rawCustName.toLowerCase() === 'guest')
+      ? 'Akash'
+      : rawCustName;
+
+    if (normalizedItems.length === 0) {
+      normalizedItems = [{
+        id: 'item-1',
+        name: 'Fresh Grocery & Essentials Pack',
+        quantity: 1,
+        price: totalVal,
+        image: 'apples-real.jpg'
+      }];
+    }
+
+    let rawStatus = String(o.status || 'PLACED').trim().toUpperCase();
+    if (rawStatus === 'PENDING' || rawStatus === 'CONFIRMED') {
+      rawStatus = 'PLACED';
+    } else if (rawStatus === 'PACKING') {
+      rawStatus = 'PREPARING';
+    } else if (rawStatus === 'READY') {
+      rawStatus = 'READY_FOR_PICKUP';
+    }
+
+    return {
+      ...o,
+      id: formatDisplayOrderId(o),
+      rawId: String(o.rawId || o.id || ''),
+      customer_name: validCustName,
+      customer_phone: formattedPhone,
+      address: String(o.delivery_address || o.address || 'KSS Metro Tech Park, Sector 4, Bengaluru'),
+      delivery_address: String(o.delivery_address || o.address || 'KSS Metro Tech Park, Sector 4, Bengaluru'),
+      status: rawStatus as Order['status'],
+      items: normalizedItems,
+      subtotal: calculatedSub || totalVal,
+      delivery_fee: Number(o.delivery_fee || 0),
+      discount: Number(o.discount || 0),
+      total: totalVal,
+      payment_method: String(o.payment_method || 'UPI').toUpperCase(),
+      payment_status: String(o.payment_status || 'PAID').toUpperCase(),
+    };
+  };
+
+  // Fetch real orders from backend with fallback
+  const fetchOrdersSilent = useCallback(async () => {
+    refreshOrders();
+    try {
+      const res = await get('/store/orders');
+      let apiOrders: Order[] = [];
+      const listData = Array.isArray(res) ? res : (Array.isArray(res?.orders) ? res.orders : []);
+      if (listData.length > 0) {
+        apiOrders = listData.map((o: any) => normalizeSellerOrder(o));
+        setOrders(apiOrders);
+        await setItem('grabit_seller_orders', apiOrders).catch(() => {});
+      }
+    } catch {
+      // Retain existing live fetched orders
+    } finally {
+      setLoading(false);
+    }
+  }, [refreshOrders]);
+
+>>>>>>> 953af6a9ab3325be0f9b1dd2f892f76a542fc98c
   // Fetch real riders from backend with fallback
   const fetchRiders = useCallback(async () => {
     try {
@@ -293,6 +380,7 @@ export default function SellerOrdersScreen() {
     let previousOrders: Order[] = [];
     setOrders((prev) => {
       previousOrders = prev;
+<<<<<<< HEAD
       const updated = prev.map((o) =>
         o.id === displayOrderId || o.rawId === backendOrderId || o.rawId === displayOrderId
           ? { ...o, status: newStatus }
@@ -301,14 +389,25 @@ export default function SellerOrdersScreen() {
       setItem('grabit_seller_orders', updated).catch(() => {});
       return updated;
     });
+=======
+      const updated = prev.map((o) => (isSameOrderId(o, orderId) ? { ...o, status: newStatus } : o));
+      setItem('grabit_seller_orders', updated).catch(() => {});
+      return updated;
+    });
+    showToast(`Order updated to ${newStatus}`, 'success');
+>>>>>>> 953af6a9ab3325be0f9b1dd2f892f76a542fc98c
 
     try {
       await patch(`/orders/${encodeURIComponent(backendOrderId)}/status`, {
         status: newStatus.toLowerCase(),
       });
       invalidateOrdersCache();
+<<<<<<< HEAD
       refreshOrders();
       showToast(`Order #${displayOrderId} updated to ${newStatus}`, 'success');
+=======
+      await fetchOrdersSilent();
+>>>>>>> 953af6a9ab3325be0f9b1dd2f892f76a542fc98c
     } catch (err: any) {
       // Revert optimistic update on failure
       pendingTransitionsRef.current.delete(displayOrderId);
@@ -778,6 +877,7 @@ export default function SellerOrdersScreen() {
 
   const filteredOrders = React.useMemo(() => {
     return orders.filter((order) => {
+<<<<<<< HEAD
       const isTerminal = order.status === 'DELIVERED' || order.status === 'CANCELLED';
       let matchesTab = false;
       if (activeTab === 'ALL') {
@@ -785,11 +885,26 @@ export default function SellerOrdersScreen() {
         matchesTab = !isTerminal;
       } else {
         matchesTab = order.status === activeTab;
+=======
+      const st = String(order.status || '').trim().toUpperCase();
+      const tab = String(activeTab || 'ALL').trim().toUpperCase();
+      let matchesTab = tab === 'ALL' || st === tab;
+      if (tab === 'PLACED') {
+        matchesTab = st === 'PLACED' || st === 'PENDING' || st === 'CONFIRMED';
+      } else if (tab === 'PREPARING') {
+        matchesTab = st === 'PREPARING' || st === 'PACKING';
+      } else if (tab === 'READY_FOR_PICKUP') {
+        matchesTab = st === 'READY_FOR_PICKUP' || st === 'READY';
+>>>>>>> 953af6a9ab3325be0f9b1dd2f892f76a542fc98c
       }
 
       const q = searchQuery.toLowerCase();
       const matchesSearch =
+<<<<<<< HEAD
         (order.displayId || order.id || '').toLowerCase().includes(q) ||
+=======
+        (order.id || '').toLowerCase().includes(q) ||
+>>>>>>> 953af6a9ab3325be0f9b1dd2f892f76a542fc98c
         (order.rawId || '').toLowerCase().includes(q) ||
         (order.customer_name || '').toLowerCase().includes(q) ||
         (order.customer_phone || '').includes(q);
@@ -798,12 +913,17 @@ export default function SellerOrdersScreen() {
   }, [orders, activeTab, searchQuery]);
 
   const getStatusBadgeStyle = (status: Order['status']) => {
-    switch (status) {
+    const st = String(status || '').trim().toUpperCase();
+    switch (st) {
       case 'PLACED':
+      case 'PENDING':
+      case 'CONFIRMED':
         return { bg: '#FEF3C7', text: '#D97706' };
       case 'PREPARING':
+      case 'PACKING':
         return { bg: '#DBEAFE', text: '#2563EB' };
       case 'READY_FOR_PICKUP':
+      case 'READY':
         return { bg: '#E0E7FF', text: '#4F46E5' };
       case 'OUT_FOR_DELIVERY':
         return { bg: '#FCE7F3', text: '#DB2777' };
@@ -812,7 +932,7 @@ export default function SellerOrdersScreen() {
       case 'CANCELLED':
         return { bg: '#FEE2E2', text: '#DC2626' };
       default:
-        return { bg: '#F1F5F9', text: '#475569' };
+        return { bg: '#FEF3C7', text: '#D97706' };
     }
   };
 
@@ -952,8 +1072,8 @@ export default function SellerOrdersScreen() {
                     <View style={styles.riderBannerRow}>
                       <Bike size={13} color="#0066FF" style={{ marginRight: 5 }} />
                       <Text style={styles.riderBannerText} numberOfLines={1}>
-                        Rider: <Text style={styles.riderNameBold}>{item.rider_name || 'Karthik Rider'}</Text>
-                        <Text style={{ color: COLORS.textSecondary }}> (+91 {item.rider_phone || '9876543210'})</Text>
+                        Rider: <Text style={styles.riderNameBold}>{item.rider_name || 'Delivery Partner'}</Text>
+                        <Text style={{ color: COLORS.textSecondary }}>{item.rider_phone ? ` (+91 ${item.rider_phone})` : ''}</Text>
                       </Text>
                     </View>
                   )}
@@ -1006,6 +1126,7 @@ export default function SellerOrdersScreen() {
                       <Text style={styles.slipBtnText}>Slip</Text>
                     </Pressable>
 
+<<<<<<< HEAD
                     {(item.status === 'READY_FOR_PICKUP' || item.status === 'OUT_FOR_DELIVERY' || item.rider_name || item.rider_id) && (
                       <Pressable
                         style={styles.reassignBtn}
@@ -1061,6 +1182,59 @@ export default function SellerOrdersScreen() {
                         <Text style={styles.actionBtnText}>{isUpdating ? 'Handing Over...' : 'Handover'}</Text>
                       </Pressable>
                     )}
+=======
+                    {(() => {
+                      const st = String(item.status || '').trim().toUpperCase();
+                      const isPlaced = st === 'PLACED' || st === 'PENDING' || st === 'CONFIRMED';
+                      const isPreparing = st === 'PREPARING' || st === 'PACKING';
+                      const isReady = st === 'READY_FOR_PICKUP' || st === 'READY';
+                      const isOut = st === 'OUT_FOR_DELIVERY';
+
+                      return (
+                        <>
+                          {(isReady || isOut || item.rider_name || item.rider_id) && (
+                            <Pressable
+                              style={styles.reassignBtn}
+                              onPress={() => setSelectedReassignOrder(item)}
+                            >
+                              <UserCheck size={14} color="#0066FF" style={{ marginRight: 4 }} />
+                              <Text style={styles.reassignBtnText}>Reassign</Text>
+                            </Pressable>
+                          )}
+
+                          {isPlaced && (
+                            <Pressable
+                              style={styles.acceptBtn}
+                              onPress={() => handleUpdateStatus(item.id, 'PREPARING')}
+                            >
+                              <PackageCheck size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+                              <Text style={styles.actionBtnText}>Accept & Pack</Text>
+                            </Pressable>
+                          )}
+
+                          {isPreparing && (
+                            <Pressable
+                              style={styles.readyBtn}
+                              onPress={() => handleUpdateStatus(item.id, 'READY_FOR_PICKUP')}
+                            >
+                              <CheckCircle size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+                              <Text style={styles.actionBtnText}>Mark Ready for Pickup</Text>
+                            </Pressable>
+                          )}
+
+                          {isReady && (
+                            <Pressable
+                              style={styles.dispatchBtn}
+                              onPress={() => handleUpdateStatus(item.id, 'OUT_FOR_DELIVERY')}
+                            >
+                              <Truck size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+                              <Text style={styles.actionBtnText}>Handover Rider</Text>
+                            </Pressable>
+                          )}
+                        </>
+                      );
+                    })()}
+>>>>>>> 953af6a9ab3325be0f9b1dd2f892f76a542fc98c
                   </ScrollView>
                 </View>
               </View>

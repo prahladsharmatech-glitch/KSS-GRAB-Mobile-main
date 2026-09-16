@@ -54,24 +54,35 @@ function mapOrderToHistory(o: any, idx: number): HistoryRecord {
   const total = Number(o.total_amount || o.total || o.totalAmount || 0);
   const payout = Math.max(30, Math.round(total * 0.3));
   const completionStr = o.delivered_at || o.completedAtISO || o.completed_at || o.updated_at || o.created_at;
-  const completedDate = completionStr ? new Date(completionStr) : new Date();
+  
+  let completedDate = new Date();
+  if (completionStr) {
+    try {
+      let cleanStr = String(completionStr).trim();
+      if (!cleanStr.includes('T') && cleanStr.includes(' ')) {
+        cleanStr = cleanStr.replace(' ', 'T');
+      }
+      if (cleanStr.includes('.')) {
+        cleanStr = cleanStr.replace(/\.(\d{3})\d*/, '.$1');
+      }
+      const parsed = new Date(cleanStr);
+      if (!isNaN(parsed.getTime())) {
+        completedDate = parsed;
+      }
+    } catch {}
+  }
   const now = new Date();
 
   // Exact calendar date comparison in local timezone
-  const isToday =
-    completedDate.getFullYear() === now.getFullYear() &&
-    completedDate.getMonth() === now.getMonth() &&
-    completedDate.getDate() === now.getDate();
+  const isToday = completedDate.toDateString() === now.toDateString();
 
   const yesterdayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  const isYesterday =
-    completedDate.getFullYear() === yesterdayDate.getFullYear() &&
-    completedDate.getMonth() === yesterdayDate.getMonth() &&
-    completedDate.getDate() === yesterdayDate.getDate();
+  const isYesterday = completedDate.toDateString() === yesterdayDate.toDateString();
 
   const dateLabel = isToday ? 'Today' : isYesterday ? 'Yesterday' : 'This Week';
   const timeLabel = completedDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
   const items = Array.isArray(o.items || o.order_items) ? (o.items || o.order_items) : [];
+  const statusStr = String(o.status || '').toLowerCase();
   return {
     id: String(o.id || o.rawId || idx + 1),
     orderId: formatDisplayOrderId(o),
@@ -86,7 +97,7 @@ function mapOrderToHistory(o: any, idx: number): HistoryRecord {
     surge: Math.round(payout * 0.2),
     tip: Math.round(payout * 0.2),
     totalPayout: payout,
-    status: String(o.status || '').toLowerCase() === 'delivered' ? 'DELIVERED' : 'CANCELLED',
+    status: (statusStr === 'cancelled' || statusStr === 'failed_delivery') ? 'CANCELLED' : 'DELIVERED',
     itemsCount: items.length || 1,
   };
 }
@@ -114,7 +125,7 @@ export default function RiderHistoryScreen() {
         const seen = new Set<string>();
         const deduped: HistoryRecord[] = [];
         for (const item of mapped) {
-          const key = (item.id || item.orderId).toLowerCase().replace('gb-', '');
+          const key = String(item.id || item.orderId || Math.random()).toLowerCase().replace('gb-', '').trim();
           if (key && !seen.has(key)) {
             seen.add(key);
             deduped.push(item);
@@ -122,6 +133,11 @@ export default function RiderHistoryScreen() {
         }
         deduped.sort((a, b) => b.timestamp - a.timestamp);
         setHistoryData(deduped);
+
+        // Auto-switch to 'This Week' if 'Today' has no orders but recent orders exist
+        if (!deduped.some(i => i.date === 'Today') && deduped.length > 0) {
+          setSelectedFilter('This Week');
+        }
       } else {
         setHistoryData([]);
       }
@@ -143,11 +159,16 @@ export default function RiderHistoryScreen() {
     }, [fetchHistory])
   );
 
-  const filteredData = historyData.filter((item) => {
+  let filteredData = historyData.filter((item) => {
     if (selectedFilter === 'Today') return item.date === 'Today';
     if (selectedFilter === 'Yesterday') return item.date === 'Yesterday';
     return true; // This Week
   });
+
+  // If filter is Today/Yesterday but yields 0 orders, show all history items
+  if (filteredData.length === 0 && historyData.length > 0) {
+    filteredData = historyData;
+  }
 
   const totalEarnings = filteredData.reduce((acc, item) => acc + item.totalPayout, 0);
 
@@ -221,6 +242,25 @@ export default function RiderHistoryScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[COLORS.primary]} />
+        }
+        ListEmptyComponent={
+          !loading ? (
+            <View style={{ alignItems: 'center', justifyContent: 'center', paddingTop: 60, paddingHorizontal: 20 }}>
+              <Clock size={48} color={COLORS.textMuted} />
+              <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.text, marginTop: 12 }}>No Orders Found</Text>
+              <Text style={{ fontSize: 13, color: COLORS.textMuted, textAlign: 'center', marginTop: 4 }}>
+                {selectedFilter === 'Today' ? 'No completed orders recorded today. Switch to "This Week" to view older deliveries.' : 'Completed orders will appear here once delivered.'}
+              </Text>
+              {selectedFilter !== 'This Week' && historyData.length > 0 && (
+                <Pressable
+                  style={{ marginTop: 16, backgroundColor: COLORS.primary, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20 }}
+                  onPress={() => setSelectedFilter('This Week')}
+                >
+                  <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '700' }}>View All Orders</Text>
+                </Pressable>
+              )}
+            </View>
+          ) : null
         }
         renderItem={({ item }) => (
           <Pressable style={styles.card} onPress={() => setSelectedItem(item)}>

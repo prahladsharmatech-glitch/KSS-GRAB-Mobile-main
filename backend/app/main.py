@@ -50,7 +50,7 @@ from .schemas import (
     ManagedUser,
     ProfileUpdate,
 )
-from .security import create_token, current_user, require_roles
+from .security import create_token, current_user, require_roles, _DEMO_TOKENS
 from .store import store
 
 def is_valid_uuid(val: any) -> bool:
@@ -198,8 +198,8 @@ async def cache_get(key: str):
 
 async def cache_set(key: str, value: any, ttl_seconds: int = 3600) -> bool:
     """Store JSON serializable value in Redis cache with TTL."""
-    val_str = json.dumps(value)
     try:
+        val_str = json.dumps(value)
         await _redis_exec_raw(["SET", key, val_str, "EX", ttl_seconds])
         _local_cache_fallback.pop(key, None)
         return True
@@ -261,9 +261,6 @@ def extract_order_suffix(order_id: any) -> str:
         s = s[3:]
     if s.startswith("#"):
         s = s[1:]
-    if "-" in s and len(s) > 15:
-        parts = s.split("-")
-        s = parts[-1]
     return s.strip()
 
 def is_same_order_id(id1: any, id2: any) -> bool:
@@ -273,9 +270,20 @@ def is_same_order_id(id1: any, id2: any) -> bool:
     s2 = str(id2).strip().lower()
     if s1 == s2:
         return True
-    suf1 = extract_order_suffix(s1)
-    suf2 = extract_order_suffix(s2)
-    if suf1 and suf2 and suf1 == suf2:
+    
+    c1 = extract_order_suffix(s1)
+    c2 = extract_order_suffix(s2)
+    if c1 == c2:
+        return True
+
+    p1_first = c1.split("-")[0] if "-" in c1 else c1
+    p1_last = c1.split("-")[-1] if "-" in c1 else c1
+    p2_first = c2.split("-")[0] if "-" in c2 else c2
+    p2_last = c2.split("-")[-1] if "-" in c2 else c2
+
+    if p1_first and p2_first and p1_first == p2_first:
+        return True
+    if p1_last and p2_last and p1_last == p2_last:
         return True
     return False
 
@@ -410,14 +418,10 @@ def normalize_order_dict(o: dict) -> dict:
         # Strip dashes so UUID "a3f1e7b2-..." → "a3f1e7b2..." → first 6 → "A3F1E7"
         clean_hex = oid.replace("-", "").replace("GB-", "").replace("gb-", "").strip()
         disp = f"GB-{clean_hex[:6].upper()}" if len(clean_hex) >= 6 else f"GB-{clean_hex.upper()}"
-        if not o.get("order_number"):
-            o["order_number"] = disp
-        if not o.get("orderNumber"):
-            o["orderNumber"] = disp
-        if not o.get("display_id"):
-            o["display_id"] = disp
-        if not o.get("displayId"):
-            o["displayId"] = disp
+        o["order_number"] = disp
+        o["orderNumber"] = disp
+        o["display_id"] = disp
+        o["displayId"] = disp
 
     # Enrich customer_name and customer_phone if missing or generic ('Customer', 'guest', '+919999900000')
     curr_cname = str(o.get("customer_name") or o.get("customerName") or o.get("name") or "").strip()
@@ -532,7 +536,14 @@ async def resolve_valid_rider_id(rider_id: str) -> str | None:
     if not r_str or r_str in ("None", "null", ""):
         return None
     
-    # 1. Direct query by ID in profiles (only if r_str is a valid UUID format)
+    # 1. Check if rider_id is a known demo token or demo UUID sub
+    demo_phone = None
+    for dt, info in _DEMO_TOKENS.items():
+        if r_str == dt or r_str == info.get("sub"):
+            demo_phone = info.get("phone")
+            break
+
+    # 2. Direct query by ID in profiles (only if r_str is a valid UUID format)
     if is_valid_uuid(r_str):
         try:
             rows = await store.get("profiles", {"id": f"eq.{r_str}", "select": "id"})
@@ -541,13 +552,19 @@ async def resolve_valid_rider_id(rider_id: str) -> str | None:
         except Exception:
             pass
     
-    # 2. Query by phone or role
+    # 3. Query by phone or role
+    search_phones = {r_str}
+    if demo_phone:
+        search_phones.add(demo_phone)
+    
     try:
         p_rows = await store.get("profiles", {"role": "eq.delivery_agent", "select": "id,phone"})
         if isinstance(p_rows, list) and len(p_rows) > 0:
             for pr in p_rows:
-                if pr.get("phone") and (r_str in pr["phone"] or pr["phone"] in r_str):
-                    return str(pr["id"])
+                pr_phone = str(pr.get("phone") or "")
+                for sph in search_phones:
+                    if sph and pr_phone and (sph in pr_phone or pr_phone in sph):
+                        return str(pr["id"])
     except Exception:
         pass
     
@@ -612,7 +629,6 @@ async def get_valid_store_id(store_id: str | None = None) -> str | None:
 PG_ORDER_COLUMNS = {
     "id", "customer_id", "seller_id", "delivery_agent_id", "store_id",
     "delivery_address", "delivery_location", "status", "total", "created_at",
-    "workflow_step", "otp_verified", "otp_verified_at", "proof_photo_url",
 }
 OPTIONAL_DELIVERY_COLUMNS = {"workflow_step", "otp_verified", "otp_verified_at", "proof_photo_url"}
 
@@ -1127,20 +1143,8 @@ async def verify_otp(body: VerifyOtpRequest):
 
     if rows:
         profile = dict(rows[0])
-        if "9360843281" in str(profile.get("phone", "")):
-            profile["full_name"] = "Akash"
-            profile["name"] = "Akash"
-        elif profile.get("phone") == "+919999900003" or profile.get("full_name") == "Speedy Express Delivery":
-            profile["full_name"] = "Karthik Rider"
-            profile["name"] = "Karthik Rider"
-            profile["partnerVerified"] = True
-        elif profile.get("phone") == "+919080841727":
-            profile["full_name"] = "Thabee"
-            profile["name"] = "Thabee"
-            profile["partnerVerified"] = True
-
         if "name" not in profile or not profile["name"]:
-            profile["name"] = profile.get("full_name") or "Customer"
+            profile["name"] = profile.get("full_name") or profile.get("phone") or "User"
 
         token = create_token(profile)
         return {"access_token": token, "token_type": "bearer", "user": profile, "is_new": False}
@@ -1222,12 +1226,6 @@ async def me(user=Depends(current_user)):
             break
 
     if user_data.get("role") in ("delivery_agent", "rider", "delivery_partner"):
-        if user_data.get("phone") == "+919999900003" or user_data.get("full_name") == "Speedy Express Delivery":
-            user_data["full_name"] = "Karthik Rider"
-            user_data["name"] = "Karthik Rider"
-        elif user_data.get("phone") == "+919080841727":
-            user_data["full_name"] = "Thabee"
-            user_data["name"] = "Thabee"
         if "partnerVerified" not in user_data:
             user_data["partnerVerified"] = True
         if "verification_status" not in user_data:
@@ -1884,6 +1882,7 @@ async def orders(
 
     # Combine Redis cache, Supabase DB, and local file storage so NO order is ever missed
     all_sources = (cached_orders if isinstance(cached_orders, list) else []) + db_orders + local_file_orders
+    seen_map = {}
     for o in all_sources:
         if not isinstance(o, dict):
             continue
@@ -1893,15 +1892,31 @@ async def orders(
         clean_raw = raw_id.replace("GB-", "").replace("gb-", "").strip().lower()
         if not clean_id and not clean_raw:
             continue
-        if clean_id in seen or clean_raw in seen:
-            continue
-        seen.add(clean_id)
-        if clean_raw:
-            seen.add(clean_raw)
-        seen.add(oid.lower())
+
+        match_key = None
+        for existing_key in list(seen_map.keys()):
+            if is_same_order_id(clean_id, existing_key) or is_same_order_id(clean_raw, existing_key):
+                match_key = existing_key
+                break
+
         order_dict = normalize_order_dict(dict(o))
+
+        if match_key:
+            existing_ord = seen_map[match_key]
+            curr_st = str(existing_ord.get("status") or "").lower()
+            new_st = str(order_dict.get("status") or "").lower()
+            if new_st in TERMINAL_ORDER_STATUSES and curr_st not in TERMINAL_ORDER_STATUSES:
+                existing_ord["status"] = new_st
+                if new_st == "delivered":
+                    existing_ord["delivered_at"] = order_dict.get("delivered_at") or datetime.now(timezone.utc).isoformat()
+                    existing_ord["completedAtISO"] = order_dict.get("completedAtISO") or existing_ord.get("delivered_at")
+            continue
+
         if not order_dict.get("items") or len(order_dict.get("items") or []) == 0:
             order_dict["items"] = await resolve_order_items(order_dict, None, o_items_map)
+
+        key = clean_id or clean_raw
+        seen_map[key] = order_dict
         combined.append(order_dict)
 
     combined.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
@@ -2850,6 +2865,7 @@ async def verify_delivery_otp(
         raise HTTPException(status_code=404, detail="Order not found")
 
     st = str(order.get("status") or "").lower()
+<<<<<<< HEAD
     if st == "cancelled":
         raise HTTPException(status_code=409, detail="Cannot verify OTP on a cancelled order")
 
@@ -2857,6 +2873,8 @@ async def verify_delivery_otp(
     if not order_assigned_to_rider(order, valid_keys):
         raise HTTPException(status_code=403, detail="Forbidden: You are not assigned to this order")
 
+=======
+>>>>>>> 953af6a9ab3325be0f9b1dd2f892f76a542fc98c
     if st in TERMINAL_ORDER_STATUSES and st == "delivered":
         return {
             "success": True,
@@ -2865,6 +2883,10 @@ async def verify_delivery_otp(
             "otp_verified": True,
             "verified": True
         }
+
+    valid_keys = await expand_rider_identity_keys(user)
+    if not order_assigned_to_rider(order, valid_keys):
+        raise HTTPException(status_code=403, detail="Forbidden: You are not assigned to this order")
 
     expected_otp = None
     if order.get("otp"):
@@ -2903,6 +2925,31 @@ async def verify_delivery_otp(
 
     await sync_order_redis_state(target_order_id, order, redis_fields, require_success=False)
     await redis_publish("orders:status", {"order_id": target_order_id, "otp_verified": True, "status": "delivered"})
+
+    # Update rider history in Redis so rider history screen shows completed order immediately
+    try:
+        rider_sub = user.get("sub")
+        alias_keys = set(await expand_rider_identity_keys(user)) if user else {str(rider_sub)}
+        if rider_sub:
+            alias_keys.add(str(rider_sub))
+
+        delivered_rec = dict(order)
+        delivered_rec["status"] = "delivered"
+        delivered_rec["delivered_at"] = now_iso
+        delivered_rec["completedAtISO"] = now_iso
+        if rider_sub:
+            delivered_rec["delivery_agent_id"] = rider_sub
+
+        for r_key in alias_keys:
+            if not r_key:
+                continue
+            h_cache = await cache_get(f"cloud:rider_history:{r_key}") or []
+            if not isinstance(h_cache, list):
+                h_cache = []
+            h_cache = [delivered_rec] + [h for h in h_cache if not is_same_order_id(h.get("id") or h.get("orderId"), target_order_id)]
+            await cache_set(f"cloud:rider_history:{r_key}", h_cache[:200], ttl_seconds=86400 * 30)
+    except Exception as err:
+        logger.warning(f"Error updating rider history cache in verify_delivery_otp: {err}")
 
     # Update orders_items.json synchronously
     try:
@@ -3565,12 +3612,7 @@ async def delivery_active_orders(include_offer: bool = Query(False), user=Depend
                     if not order_data.get("customer_phone"):
                         order_data["customer_phone"] = redis_map[oid_key].get("customer_phone")
                 else:
-                    order_data["items"] = [{
-                        "id": 1,
-                        "name": "Express Grocery Item",
-                        "qty": 1,
-                        "price": float(order_data.get("total_amount") or 50)
-                    }]
+                    order_data["items"] = []
 
             # Classification logic driven authoritatively by Postgres
             if oid_key in pg_assigned_map or (oid_suf and oid_suf in pg_assigned_map):
@@ -3624,56 +3666,50 @@ async def delivery_active_orders(include_offer: bool = Query(False), user=Depend
 @router.get("/delivery/history")
 async def delivery_history(user=Depends(require_roles("delivery_agent"))):
     rider_id = user.get("sub")
+    db_orders = []
     try:
         identity_keys = list(await expand_rider_identity_keys(user))
         if str(rider_id) not in identity_keys:
             identity_keys.append(str(rider_id))
 
-        cache_key = f"cloud:rider_history:{rider_id}"
-        cached = await cache_get(cache_key)
-        if isinstance(cached, list) and cached:
-            return cached
+        valid_uuid_keys = [k for k in identity_keys if is_valid_uuid(k)]
 
-        db_orders = []
+        # 1. Fetch all orders from Supabase Postgres DB
         try:
-            db_orders = await store.get("orders", {
-                "delivery_agent_id": f"in.({','.join(identity_keys)})",
-                "status": "eq.delivered",
+            pg_all = await store.get("orders", {
                 "order": "created_at.desc",
                 "limit": 200
             })
+            if isinstance(pg_all, list):
+                for o in pg_all:
+                    if isinstance(o, dict):
+                        db_orders.append(o)
+        except Exception as err:
+            logger.warning(f"Error querying Supabase DB in delivery_history: {err}")
+
+        # 2. Pull rider history Redis caches across all rider identity keys
+        for k in identity_keys:
+            if not k:
+                continue
+            cached_h = await cache_get(f"cloud:rider_history:{k}")
+            if isinstance(cached_h, list) and cached_h:
+                db_orders.extend([o for o in cached_h if isinstance(o, dict)])
+
+        # 3. Pull from Redis cloud:orders_list queue
+        redis_queue = await cache_get("cloud:orders_list") or []
+        if isinstance(redis_queue, list):
+            db_orders.extend([o for o in redis_queue if isinstance(o, dict)])
+
+        # 4. Pull from orders_items.json fallback
+        try:
+            o_map = load_orders_items()
+            for o_item in o_map.values():
+                if isinstance(o_item, dict):
+                    o_obj = o_item.get("order") if isinstance(o_item.get("order"), dict) else o_item
+                    if isinstance(o_obj, dict):
+                        db_orders.append(o_obj)
         except Exception:
-            db_orders = []
-        if not isinstance(db_orders, list):
-            db_orders = []
-
-        if not db_orders:
-            redis_queue = await cache_get("cloud:orders_list") or []
-            if isinstance(redis_queue, list):
-                agent_phone = str(user.get("phone") or "").strip()
-                db_orders = [
-                    o for o in redis_queue 
-                    if str(o.get("status")).lower() == "delivered" and (
-                        str(o.get("delivery_agent_id")) in identity_keys or 
-                        str(o.get("agent_id")) in identity_keys or
-                        str(o.get("assigned_agent_id")) in identity_keys or
-                        (agent_phone and str(o.get("delivery_agent_phone")) == agent_phone)
-                    )
-                ]
-
-        if not db_orders:
-            try:
-                o_map = load_orders_items()
-                agent_phone = str(user.get("phone") or "").strip()
-                for o_item in o_map.values():
-                    if isinstance(o_item, dict):
-                        o_obj = o_item.get("order") if isinstance(o_item.get("order"), dict) else o_item
-                        st = str(o_obj.get("status") or "").lower()
-                        agent_in_obj = str(o_obj.get("delivery_agent_id") or o_obj.get("agent_id") or "")
-                        if st == "delivered" and (agent_in_obj in identity_keys or (agent_phone and str(o_obj.get("delivery_agent_phone")) == agent_phone)):
-                            db_orders.append(o_obj)
-            except Exception:
-                pass
+            pass
 
         deduped = []
         seen = set()
@@ -3701,16 +3737,30 @@ async def delivery_history(user=Depends(require_roles("delivery_agent"))):
                     if not o.get("customer_name"):
                         o["customer_name"] = cached_single.get("customer_name")
                 else:
-                    o["items"] = [{"id": 1, "name": "Express Grocery Item", "qty": 1, "price": float(o.get("total_amount") or 50)}]
+                    o["items"] = []
             deduped.append(o)
 
         db_orders = deduped
 
+        # Sort newest first
+        def get_order_ts(ord_item):
+            ts_val = ord_item.get("delivered_at") or ord_item.get("completedAtISO") or ord_item.get("completed_at") or ord_item.get("created_at") or ""
+            if ts_val:
+                try:
+                    return datetime.fromisoformat(str(ts_val).replace("Z", "+00:00")).timestamp()
+                except Exception:
+                    pass
+            return 0.0
+
+        db_orders.sort(key=get_order_ts, reverse=True)
+
         if db_orders:
-            await redis_exec(["SET", cache_key, json.dumps(db_orders), "EX", 30])
+            cache_key = f"cloud:rider_history:{rider_id}"
+            await cache_set(cache_key, db_orders, ttl_seconds=300)
 
         return db_orders
-    except Exception:
+    except Exception as err:
+        logger.error(f"Error in delivery_history: {err}")
         return []
 
 @router.post("/delivery/history/sync")
@@ -6154,7 +6204,7 @@ async def get_seller_profile_endpoint(user: dict = Depends(require_roles("seller
     except Exception:
         pass
 
-    manager_name = (profile and profile.get("full_name")) or "John Seller"
+    manager_name = (profile and (profile.get("full_name") or profile.get("name"))) or (user and (user.get("full_name") or user.get("name"))) or db_phone or "Seller"
     phone_num = (profile and profile.get("phone")) or db_phone or "+919999900002"
     email_addr = (profile and profile.get("email")) or "seller@grabit.local"
     store_name = (store_info and store_info.get("name")) or "GrabIt SuperMart (Indiranagar)"

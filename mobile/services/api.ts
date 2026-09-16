@@ -139,8 +139,8 @@ export async function fetchDirectFromSupabase<T>(path: string): Promise<T | null
       }
     } else if (route === 'categories' || route === 'categories/') {
       endpoint = `${SUPABASE_REST_URL}/categories?select=*&order=name`;
-    } else if (route === 'orders' || route === 'orders/' || route === 'store/orders' || route === 'seller/orders' || route.startsWith('orders/user/')) {
-      endpoint = `${SUPABASE_REST_URL}/orders?select=*,profiles!orders_customer_id_fkey(id,full_name,phone)&order=created_at.desc&limit=100`;
+    } else if (route === 'orders' || route === 'orders/' || route === 'store/orders' || route === 'seller/orders' || route.startsWith('orders/user/') || route.startsWith('delivery/')) {
+      endpoint = `${SUPABASE_REST_URL}/orders?select=*,profiles!orders_customer_id_fkey(id,full_name,phone)&status=in.(delivered,completed)&order=created_at.desc&limit=100`;
     } else if (route === 'seller/profile' || route === 'seller/profile/') {
       return {
         store_name: 'GrabIt SuperMart (Indiranagar)',
@@ -181,10 +181,10 @@ export async function fetchDirectFromSupabase<T>(path: string): Promise<T | null
           const enriched = data.map((o: any) => {
             const p = o.profiles && typeof o.profiles === 'object' ? o.profiles : {};
             const rawName = String(o.customer_name || p.full_name || o.name || '').trim();
-            const cName = (!rawName || rawName.toLowerCase() === 'customer' || rawName.toLowerCase() === 'guest') ? 'Akash' : rawName;
+            const cName = rawName || 'Customer User';
             const rawPhone = String(o.customer_phone || p.phone || '').replace(/\D/g, '');
             const last10 = rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
-            const cPhone = last10 ? `+91 ${last10}` : '+91 9360843281';
+            const cPhone = last10 ? `+91 ${last10}` : (o.customer_phone || '');
             return {
               ...o,
               customer_name: cName,
@@ -282,7 +282,7 @@ export async function patchDirectToSupabase<T>(path: string, payload: any): Prom
       let orderId = parts[1];
       let targetUuid = orderId;
       if (!isUuid(orderId)) {
-        // Query recent orders from Supabase to find matching real UUID
+        // Query recent orders from Supabase to find exact matching real UUID
         try {
           const fetchRes = await fetch(`${SUPABASE_REST_URL}/orders?select=id,status&order=created_at.desc&limit=50`, {
             headers: {
@@ -293,7 +293,11 @@ export async function patchDirectToSupabase<T>(path: string, payload: any): Prom
           if (fetchRes.ok) {
             const rows = await fetchRes.json();
             if (Array.isArray(rows) && rows.length > 0) {
-              const matched = rows.find((r: any) => isUuid(r.id));
+              const cleanSearch = orderId.replace(/^gb-/i, '').replace(/^#/, '').toLowerCase();
+              const matched = rows.find((r: any) => {
+                const rId = String(r.id || '').toLowerCase();
+                return rId === cleanSearch || rId.startsWith(cleanSearch) || rId.endsWith(cleanSearch);
+              });
               if (matched) targetUuid = matched.id;
             }
           }
@@ -398,7 +402,7 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
 
       if (response.status === 204) return null;
       if ((response.status === 401 || response.status === 403) && isGet) {
-        if (cleanPath.startsWith('/products') || cleanPath.startsWith('/categories') || cleanPath.startsWith('/orders') || cleanPath.startsWith('/store') || cleanPath.startsWith('/seller')) {
+        if (cleanPath.startsWith('/products') || cleanPath.startsWith('/categories') || cleanPath.startsWith('/orders') || cleanPath.startsWith('/store') || cleanPath.startsWith('/seller') || cleanPath.startsWith('/delivery')) {
           return await fetchDirectFromSupabase<T>(cleanPath);
         }
         return null;
@@ -407,7 +411,7 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        if (isGet && (cleanPath.startsWith('/products') || cleanPath.startsWith('/categories') || cleanPath.startsWith('/orders') || cleanPath.startsWith('/store') || cleanPath.startsWith('/seller'))) {
+        if (isGet && (cleanPath.startsWith('/products') || cleanPath.startsWith('/categories') || cleanPath.startsWith('/orders') || cleanPath.startsWith('/store') || cleanPath.startsWith('/seller') || cleanPath.startsWith('/delivery'))) {
           const cloudData = await fetchDirectFromSupabase<T>(cleanPath);
           if (cloudData) return cloudData;
         }
@@ -425,7 +429,7 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
       if (isGet) {
         const stale = apiCache.get(cleanPath);
         if (stale) return stale.data as T;
-        if (cleanPath.startsWith('/products') || cleanPath.startsWith('/categories') || cleanPath.startsWith('/orders') || cleanPath.startsWith('/store') || cleanPath.startsWith('/seller')) {
+        if (cleanPath.startsWith('/products') || cleanPath.startsWith('/categories') || cleanPath.startsWith('/orders') || cleanPath.startsWith('/store') || cleanPath.startsWith('/seller') || cleanPath.startsWith('/delivery')) {
           const cloudData = await fetchDirectFromSupabase<T>(cleanPath);
           if (cloudData) return cloudData;
         }
@@ -459,7 +463,100 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
     inFlightGetRequests.set(cleanPath, fetchPromise);
   }
 
+<<<<<<< HEAD
   return fetchPromise;
+=======
+  // Fast 5s timeout for GET (up from 1.5s which caused premature aborts on seller portal)
+  const timeoutMs = isGet ? 5000 : 10000;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${baseUrl}${cleanPath}`, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+      },
+    });
+
+    clearTimeout(timeoutId);
+
+    if (response.status === 204) return null;
+    if ((response.status === 401 || response.status === 403) && isGet) {
+      if (cleanPath.startsWith('/products') || cleanPath.startsWith('/categories') || cleanPath.startsWith('/orders') || cleanPath.startsWith('/store') || cleanPath.startsWith('/seller')) {
+        return await fetchDirectFromSupabase<T>(cleanPath);
+      }
+      return null;
+    }
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      if (isGet && (cleanPath.startsWith('/products') || cleanPath.startsWith('/categories') || cleanPath.startsWith('/orders') || cleanPath.startsWith('/store') || cleanPath.startsWith('/seller'))) {
+        const cloudData = await fetchDirectFromSupabase<T>(cleanPath);
+        if (cloudData) return cloudData;
+      }
+      // For POST/PATCH, tag the error with the HTTP status so callers can distinguish
+      // backend business-logic rejections (4xx) from network failures
+      const errMsg = (typeof data.detail === 'string' ? data.detail : null) ||
+        (Array.isArray(data.detail) ? data.detail.map((d: any) => d.msg || d).join('; ') : null) ||
+        `Server error (${response.status})`;
+      const thrownErr: any = new Error(errMsg);
+      thrownErr.statusCode = response.status;
+      thrownErr.isBackendError = true;
+      throw thrownErr;
+    }
+
+    if (isGet && data && !isDeliveryPath) {
+      apiCache.set(cleanPath, { data, timestamp: Date.now() });
+    }
+
+    return data as T;
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+
+    if (isGet) {
+      const stale = apiCache.get(cleanPath);
+      if (stale) return stale.data as T;
+      if (cleanPath.startsWith('/products') || cleanPath.startsWith('/categories') || cleanPath.startsWith('/orders') || cleanPath.startsWith('/store') || cleanPath.startsWith('/seller')) {
+        const cloudData = await fetchDirectFromSupabase<T>(cleanPath);
+        if (cloudData) return cloudData;
+      }
+      return null;
+    }
+
+    // Direct Supabase Cloud REST Fallback for POST/PATCH when local backend is unreachable.
+    // IMPORTANT: Only fall back if this was a genuine network/timeout error, NOT if the backend
+    // explicitly returned a 4xx error (out-of-stock, validation failure, etc.).
+    // Backend business-logic errors must bubble up to the caller so the user sees them.
+    const isBackendRejection = (err as any)?.isBackendError === true;
+    if (!isBackendRejection && (cleanPath.startsWith('/orders') || cleanPath.startsWith('/store') || cleanPath.startsWith('/seller'))) {
+      const reqBody = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
+      if (options.method === 'POST') {
+        const cloudPost = await postDirectToSupabase<T>('orders', reqBody);
+        if (cloudPost) return cloudPost;
+      } else if (options.method === 'PATCH') {
+        const cloudPatch = await patchDirectToSupabase<T>(cleanPath, reqBody);
+        if (cloudPatch) return cloudPatch;
+        return { success: true, status: reqBody?.status } as unknown as T;
+      }
+    }
+
+    // Re-throw backend business-logic errors so callers can show user-facing messages
+    if (isBackendRejection) {
+      throw err;
+    }
+
+    if (options.method === 'PATCH' || options.method === 'POST') {
+      return { success: true } as unknown as T;
+    }
+
+    throw err;
+  }
+>>>>>>> 953af6a9ab3325be0f9b1dd2f892f76a542fc98c
 }
 
 export const get = <T = any>(path: string) => api<T>(path);

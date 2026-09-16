@@ -210,10 +210,10 @@ export default function OrderDetailsPage() {
       discount: Number(found.discount) || 0,
       coupon_discount: Number(found.coupon_discount) || 0,
       delivery_fee: Number(found.delivery_fee) || 0,
-      delivery_agent_name: found.delivery_agent_name || found.rider_name || 'Karthik Rider',
-      delivery_agent_phone: found.delivery_agent_phone || '+91 9999900003',
-      delivery_vehicle: found.delivery_vehicle || 'Speedy Express • Hero Electric (KA 01 EQ 4421)',
-      delivery_rating: found.delivery_rating || '⭐ 4.9 Rating (420+ deliveries)',
+      delivery_agent_name: found.delivery_agent_name || found.rider_name || 'Delivery Partner',
+      delivery_agent_phone: found.delivery_agent_phone || '',
+      delivery_vehicle: found.delivery_vehicle || 'Delivery Partner',
+      delivery_rating: found.delivery_rating || '',
     };
   }, []);
 
@@ -345,7 +345,7 @@ export default function OrderDetailsPage() {
 
     setTimeout(() => {
       let replyText = 'Our customer support team has logged your query. An agent will contact you shortly if needed!';
-      const riderName = order?.delivery_agent_name || 'Karthik Rider';
+      const riderName = order?.delivery_agent_name || 'Delivery Partner';
       const orderStatus = (order?.status || '').toLowerCase();
 
       if (inputClean.includes('rider') || inputClean.includes('driver') || inputClean.includes('location')) {
@@ -604,9 +604,9 @@ export default function OrderDetailsPage() {
                   <Text style={{ fontSize: 24 }}>🛵</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.riderName}>{order?.delivery_agent_name || 'Karthik Rider'}</Text>
-                  <Text style={styles.riderVehicle}>{order?.delivery_vehicle || 'Speedy Express • Hero Electric (KA 01 EQ 4421)'}</Text>
-                  <Text style={styles.riderRating}>{order?.delivery_rating || '⭐ 4.9 Rating (420+ deliveries)'}</Text>
+                  <Text style={styles.riderName}>{order?.delivery_agent_name || 'Delivery Partner'}</Text>
+                  <Text style={styles.riderVehicle}>{order?.delivery_vehicle || 'Delivery Vehicle'}</Text>
+                  <Text style={styles.riderRating}>{order?.delivery_rating || ''}</Text>
                 </View>
               </View>
 
@@ -614,7 +614,7 @@ export default function OrderDetailsPage() {
                 <Pressable
                   style={styles.riderCallBtn}
                   onPress={() => {
-                    showToast('Calling rider Karthik (+91 9999900003)... 📞', 'info');
+                    showToast(`Calling rider ${order?.delivery_agent_name || ''} (${order?.delivery_agent_phone || ''})... 📞`, 'info');
                     Linking.openURL('tel:+919999900003').catch(() => {});
                   }}
                 >

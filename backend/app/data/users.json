@@ -25,14 +25,19 @@
     "license_number": "DL-KA-05-2024009182",
     "partnerVerified": true,
     "biometricsDone": true,
-    "last_active_at": null,
+    "last_active_at": "2026-09-11T15:32:54.784110+05:30",
     "created_at": "2026-01-01T08:00:00Z",
     "battery_low": false,
-    "shift_started_at": null,
-    "arrived_late_today": false,
+    "shift_started_at": "2026-09-11T15:32:33.119170+05:30",
+    "arrived_late_today": true,
     "presence_status": "ABSENT",
     "status": "ABSENT",
-    "shift_sessions": [],
+    "shift_sessions": [
+      {
+        "started_at": "2026-09-11T15:32:33.119170+05:30",
+        "ended_at": "2026-09-11T15:32:54.784110+05:30"
+      }
+    ],
     "verification_status": "ADMIN_VERIFIED",
     "verified_by_admin": true,
     "clearances": {
@@ -44,7 +49,9 @@
     "insuranceNo": "POL-HDFC-99201",
     "insurance_no": "POL-HDFC-99201",
     "pucNo": "PUC-KA05-882190",
-    "puc_no": "PUC-KA05-882190"
+    "puc_no": "PUC-KA05-882190",
+    "auto_logged_out": false,
+    "connectivity_lost_at": null
   },
   {
     "id": "d7e8f9a0-b1c2-3d4e-5f6a-7b8c9d0e1f2a",
@@ -52,8 +59,13 @@
     "full_name": "Karthik Rider",
     "phone": "+919999900003",
     "role": "delivery_agent",
+<<<<<<< HEAD
     "is_online": true,
     "agent_status": "ON_DELIVERY",
+=======
+    "is_online": false,
+    "agent_status": "UNAVAILABLE",
+>>>>>>> 953af6a9ab3325be0f9b1dd2f892f76a542fc98c
     "vehicle_type": "TVS iQube Electric Scooter",
     "plate_number": "KA-05-EX-9921",
     "license_number": "DL-2024-88712",
@@ -61,7 +73,11 @@
     "biometricsDone": true,
     "last_active_at": "2026-09-11T13:00:30.817526+05:30",
     "created_at": "2026-01-05T09:30:00Z",
+<<<<<<< HEAD
+    "shift_started_at": "2026-09-16T18:10:00.759418+05:30",
+=======
     "shift_started_at": "2026-09-16T16:51:22.180432+05:30",
+>>>>>>> 7d19c6569bcec01d67be66bfd6b5109beb6196b8
     "arrived_late_today": true,
     "shift_sessions": [
       {
@@ -97,7 +113,11 @@
         "ended_at": null
       },
       {
+<<<<<<< HEAD
+        "started_at": "2026-09-16T18:10:00.759418+05:30",
+=======
         "started_at": "2026-09-16T16:51:22.180432+05:30",
+>>>>>>> 7d19c6569bcec01d67be66bfd6b5109beb6196b8
         "ended_at": null
       }
     ],

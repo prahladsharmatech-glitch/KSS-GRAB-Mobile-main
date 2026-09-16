@@ -272,9 +272,7 @@ export default function ProfilePage() {
 
           <View style={styles.profileTextColumn}>
             <Text style={styles.profileName}>
-              {(user?.phone || userPhone || '').includes('9360843281')
-                ? (user?.name && user.name !== 'Customer User' ? user.name : 'Akash')
-                : (user ? user.name || (user as any).full_name || 'Customer' : 'Customer')}
+              {user?.name || (user as any)?.full_name || 'Customer User'}
             </Text>
             <Text style={styles.profilePhone}>
               {user?.phone || userPhone || ''}
