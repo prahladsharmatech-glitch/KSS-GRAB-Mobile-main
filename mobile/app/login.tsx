@@ -17,7 +17,7 @@ import {
   ArrowRight,
   ChevronDown,
 } from 'lucide-react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { UserRole, UserProfile } from '../types';
 import { post } from '../services/api';
 import { getCloudinaryUrl } from '../services/cloudinary';
@@ -26,11 +26,14 @@ const BANNER_IMAGE = { uri: getCloudinaryUrl('grabit_light_login_banner.jpg') };
 
 export default function LoginScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ role?: string }>();
   const { loginWithPhone, saveSession, skipLogin } = useAuth();
   const { showToast } = useToast();
   const phoneInputRef = React.useRef<any>(null);
   const otpInputRef = React.useRef<any>(null);
 
+  const initialRole: UserRole = (params.role as UserRole) || 'customer';
+  const [targetRole, setTargetRole] = useState<UserRole>(initialRole);
   const [phoneDigits, setPhoneDigits] = useState('');
   // Steps: 'phone' | 'otp' | 'profile'
   const [step, setStep] = useState<'phone' | 'otp' | 'profile'>('phone');
@@ -111,10 +114,13 @@ export default function LoginScreen() {
     if (!resolvedUser.name && (resolvedUser as any).full_name) {
       resolvedUser.name = (resolvedUser as any).full_name;
     }
+    if (!resolvedUser.role && targetRole) {
+      resolvedUser.role = targetRole;
+    }
 
     await saveSession(token, resolvedUser);
     showToast(`Welcome back, ${resolvedUser.name || 'User'}!`, 'success');
-    const targetRoute = getRedirectPath(resolvedUser.role || 'customer');
+    const targetRoute = getRedirectPath(resolvedUser.role || targetRole || 'customer');
     router.replace(targetRoute);
   };
 
@@ -144,12 +150,11 @@ export default function LoginScreen() {
     setBusy(true);
     setError('');
 
-    // Quick access role mappings (roles only, names loaded dynamically from DB)
-    const knownDemoMap: Record<string, { role: UserRole }> = {
-      '+919999900001': { role: 'admin' },
-      '+919999900002': { role: 'seller' },
-      '+919999900003': { role: 'delivery_agent' },
-      '+919999900004': { role: 'customer' },
+    const knownDemoMap: Record<string, { role: UserRole; name?: string }> = {
+      '+919999900001': { role: 'admin', name: 'Demo Admin' },
+      '+919999900002': { role: 'seller', name: 'Demo Seller' },
+      '+919999900003': { role: 'delivery_agent', name: 'Demo Rider' },
+      '+919999900004': { role: 'customer', name: 'Demo Customer' },
     };
 
     const demoUser = knownDemoMap[fullPhone];
@@ -202,13 +207,14 @@ export default function LoginScreen() {
       throw new Error('Verification failed. Please try again.');
     } catch (e: any) {
       if (otp === debugOtp || otp === '947347' || otp === '123456') {
+        const fallbackRole = targetRole || 'customer';
         const fallbackUser: UserProfile = {
           id: 'user-' + Date.now(),
           phone: fullPhone,
-          name: name || 'Customer User',
-          role: 'customer',
+          name: name || `${fallbackRole.charAt(0).toUpperCase() + fallbackRole.slice(1)} User`,
+          role: fallbackRole,
         };
-        await finishLogin(fallbackUser, 'demo-customer-token');
+        await finishLogin(fallbackUser, `demo-${fallbackRole}-token`);
         return;
       }
       setError(e?.message || 'Invalid verification code. Please check and try again.');
@@ -238,21 +244,23 @@ export default function LoginScreen() {
       }
       throw new Error('Account creation failed. Please try again.');
     } catch (e: any) {
+      const fallbackRole = targetRole || 'customer';
       const fallbackUser: UserProfile = {
         id: 'user-' + Date.now(),
         phone: fullPhone,
         name: name.trim(),
         email: email || undefined,
-        role: 'customer',
+        role: fallbackRole,
       };
-      await finishLogin(fallbackUser, 'demo-customer-token');
+      await finishLogin(fallbackUser, `demo-${fallbackRole}-token`);
     } finally {
       setBusy(false);
     }
   };
 
-  const selectDemoRole = async (demoPhone: string, demoName: string) => {
+  const selectDemoRole = async (demoPhone: string, demoName?: string, role: UserRole = 'customer') => {
     if (busy) return;
+    setTargetRole(role);
     // Pre-fill the phone number and send OTP — user must still verify to log in
     const digits = demoPhone.replace('+91', '').replace(/\D/g, '').slice(-10);
     if (!digits || digits.length !== 10) return;
@@ -550,10 +558,10 @@ export default function LoginScreen() {
               <Text style={styles.demoSectionHeader}>⚡ QUICK ACCESS — OTP REQUIRED</Text>
               <View style={styles.demoGrid}>
                 {[
-                  { label: 'Customer', icon: '🛒', phone: '+919999900004' },
-                  { label: 'Seller', icon: '🏪', phone: '+919999900002' },
-                  { label: 'Rider', icon: '🛵', phone: '+919999900003' },
-                  { label: 'Admin', icon: '🛡️', phone: '+919999900001' },
+                  { label: 'Customer', icon: '🛒', phone: '+919999900004', name: 'Demo Customer', role: 'customer' as UserRole },
+                  { label: 'Seller', icon: '🏪', phone: '+919999900002', name: 'Demo Seller', role: 'seller' as UserRole },
+                  { label: 'Rider', icon: '🛵', phone: '+919999900003', name: 'Demo Rider', role: 'delivery_agent' as UserRole },
+                  { label: 'Admin', icon: '🛡️', phone: '+919999900001', name: 'Demo Admin', role: 'admin' as UserRole },
                 ].map((item) => {
                   const isSelected = phoneDigits === item.phone.replace('+91', '');
                   return (
@@ -564,7 +572,7 @@ export default function LoginScreen() {
                         isSelected && styles.demoCardSelected,
                         pressed && { opacity: 0.8 },
                       ]}
-                      onPress={() => selectDemoRole(item.phone, item.name)}
+                      onPress={() => selectDemoRole(item.phone, item.name, item.role)}
                     >
                       <Text style={styles.demoIcon}>{item.icon}</Text>
                       <Text

@@ -73,8 +73,8 @@ export const MobileBottomNav: React.FC = () => {
 
   if (!isMounted) return null;
 
-  // Do not render bottom nav bar if user is logged out (!user) or on login screen
-  if (!user || pathname.includes('login') || pathname === '/' || pathname === '/login' || pathname === '/customer/login') {
+  // Do not render bottom nav bar on login screen or root splash
+  if (pathname.includes('login') || pathname === '/' || pathname === '/login' || pathname === '/customer/login') {
     return null;
   }
 

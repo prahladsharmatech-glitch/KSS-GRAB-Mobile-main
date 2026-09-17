@@ -2554,10 +2554,10 @@ def normalize_status(raw_status: any) -> str:
     return alias_map.get(s, s)
 
 ALLOWED_STATUS_TRANSITIONS: dict[str, set[str]] = {
-    "placed": {"placed", "confirmed", "preparing", "ready_for_pickup", "out_for_delivery", "delivered", "cancelled"},
-    "pending": {"pending", "confirmed", "preparing", "ready_for_pickup", "out_for_delivery", "delivered", "cancelled"},
-    "confirmed": {"confirmed", "preparing", "ready_for_pickup", "out_for_delivery", "delivered", "cancelled"},
-    "preparing": {"preparing", "ready_for_pickup", "out_for_delivery", "delivered", "cancelled"},
+    "placed": {"placed", "confirmed", "preparing", "cancelled"},
+    "pending": {"pending", "placed", "confirmed", "preparing", "cancelled"},
+    "confirmed": {"confirmed", "preparing", "cancelled"},
+    "preparing": {"preparing", "ready_for_pickup", "out_for_delivery", "cancelled"},
     "ready_for_pickup": {"ready_for_pickup", "out_for_delivery", "delivered", "cancelled"},
     "out_for_delivery": {"out_for_delivery", "delivered", "failed_delivery", "cancelled", "returned"},
     "delivered": {"delivered"},
@@ -2865,16 +2865,8 @@ async def verify_delivery_otp(
         raise HTTPException(status_code=404, detail="Order not found")
 
     st = str(order.get("status") or "").lower()
-<<<<<<< HEAD
     if st == "cancelled":
         raise HTTPException(status_code=409, detail="Cannot verify OTP on a cancelled order")
-
-    valid_keys = await expand_rider_identity_keys(user)
-    if not order_assigned_to_rider(order, valid_keys):
-        raise HTTPException(status_code=403, detail="Forbidden: You are not assigned to this order")
-
-=======
->>>>>>> 953af6a9ab3325be0f9b1dd2f892f76a542fc98c
     if st in TERMINAL_ORDER_STATUSES and st == "delivered":
         return {
             "success": True,

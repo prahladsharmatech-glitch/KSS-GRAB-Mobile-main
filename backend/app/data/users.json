@@ -59,13 +59,8 @@
     "full_name": "Karthik Rider",
     "phone": "+919999900003",
     "role": "delivery_agent",
-<<<<<<< HEAD
     "is_online": true,
     "agent_status": "ON_DELIVERY",
-=======
-    "is_online": false,
-    "agent_status": "UNAVAILABLE",
->>>>>>> 953af6a9ab3325be0f9b1dd2f892f76a542fc98c
     "vehicle_type": "TVS iQube Electric Scooter",
     "plate_number": "KA-05-EX-9921",
     "license_number": "DL-2024-88712",
@@ -73,11 +68,7 @@
     "biometricsDone": true,
     "last_active_at": "2026-09-11T13:00:30.817526+05:30",
     "created_at": "2026-01-05T09:30:00Z",
-<<<<<<< HEAD
     "shift_started_at": "2026-09-16T18:10:00.759418+05:30",
-=======
-    "shift_started_at": "2026-09-16T16:51:22.180432+05:30",
->>>>>>> 7d19c6569bcec01d67be66bfd6b5109beb6196b8
     "arrived_late_today": true,
     "shift_sessions": [
       {
@@ -113,11 +104,7 @@
         "ended_at": null
       },
       {
-<<<<<<< HEAD
         "started_at": "2026-09-16T18:10:00.759418+05:30",
-=======
-        "started_at": "2026-09-16T16:51:22.180432+05:30",
->>>>>>> 7d19c6569bcec01d67be66bfd6b5109beb6196b8
         "ended_at": null
       }
     ],

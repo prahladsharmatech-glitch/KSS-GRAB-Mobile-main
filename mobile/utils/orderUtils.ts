@@ -17,8 +17,7 @@ export function formatDisplayOrderId(orderOrId: any): string {
   if (typeof orderOrId === 'string') {
     displayStr = orderOrId;
   } else if (typeof orderOrId === 'object') {
-<<<<<<< HEAD
-    str = String(
+    displayStr = String(
       orderOrId.display_id ||
       orderOrId.displayId ||
       orderOrId.order_number ||
@@ -27,14 +26,6 @@ export function formatDisplayOrderId(orderOrId: any): string {
       orderOrId.id ||
       orderOrId.order_id ||
       ''
-=======
-    // Prefer rawId (canonical UUID) so the display alias is always UUID-derived
-    uuidStr = String(orderOrId.rawId || '');
-    displayStr = String(
-      orderOrId.order_number || orderOrId.orderNumber ||
-      orderOrId.display_id  || orderOrId.displayId  ||
-      orderOrId.id          || ''
->>>>>>> 7d19c6569bcec01d67be66bfd6b5109beb6196b8
     );
   }
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, ScrollView, Pressable, Switch, StyleSheet, ActivityIndicator, RefreshControl, Modal } from 'react-native';
+import { View, Text, ScrollView, Pressable, Switch, StyleSheet, ActivityIndicator, RefreshControl, Modal, Platform } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { get, post, invalidateOrdersCache } from '../../services/api';
 import { useRealtimeOrders } from '../../services/realtimeOrders';
@@ -32,7 +32,11 @@ import { useAuth } from '../../context/AuthContext';
 
 interface ActiveOrder {
   id: string;
+  rawId?: string;
   orderNumber?: string;
+  order_number?: string;
+  displayId?: string;
+  display_id?: string;
   customer_name?: string;
   customer_phone?: string;
   delivery_address?: string;
@@ -48,6 +52,19 @@ export default function RiderDashboardScreen() {
   const { isOnline, isDutyLoading, toggleDuty, refreshDutyStatus, rider: ctxRider } = useRiderDuty();
   const [breakMode, setBreakMode] = useState(false);
   const [rider, setRider] = useState<DeliveryAgent | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    try {
+      const { BackHandler: BH } = require('react-native');
+      if (!BH || typeof BH.addEventListener !== 'function') return;
+      const backAction = () => true;
+      const sub = BH.addEventListener('hardwareBackPress', backAction);
+      return () => {
+        if (sub && typeof sub.remove === 'function') sub.remove();
+      };
+    } catch {}
+  }, []);
 
   const handleOpenTaskNavigation = (e?: any) => {
     if (e && e.stopPropagation) e.stopPropagation();
@@ -251,17 +268,12 @@ export default function RiderDashboardScreen() {
   // Order display values from real API
   const orderDisplay = activeOrder
     ? {
-<<<<<<< HEAD
         display_id: activeOrder.display_id || activeOrder.displayId || activeOrder.order_number || activeOrder.orderNumber,
         displayId: activeOrder.display_id || activeOrder.displayId || activeOrder.order_number || activeOrder.orderNumber,
         order_number: activeOrder.order_number || activeOrder.orderNumber,
         orderNumber: activeOrder.order_number || activeOrder.orderNumber,
         id: activeOrder.id || activeOrder.rawId || '—',
         rawId: activeOrder.id || activeOrder.rawId,
-=======
-        id: formatDisplayOrderId(activeOrder),
-        rawId: (activeOrder as any).rawId || activeOrder.id,
->>>>>>> 7d19c6569bcec01d67be66bfd6b5109beb6196b8
         customerName: activeOrder.customer_name || 'Customer',
         customerPhone: activeOrder.customer_phone || '',
         storeName: activeOrder.store_name || 'Grabit Dark Store',

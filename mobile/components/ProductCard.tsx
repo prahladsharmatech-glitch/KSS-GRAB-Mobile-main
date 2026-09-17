@@ -174,7 +174,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({ product, width }) =>
 
           {isOutOfStock ? (
             <View style={styles.disabledAddBtn}>
-              <Text style={styles.disabledAddBtnText}>Out of Stock</Text>
+              <Text style={styles.disabledAddBtnText} numberOfLines={1}>Out of Stock</Text>
             </View>
           ) : localQty === 0 ? (
             <Pressable
@@ -184,7 +184,7 @@ const ProductCardComponent: React.FC<ProductCardProps> = ({ product, width }) =>
               ]}
               onPress={handleAdd}
             >
-              <Text style={styles.addBtnText}>Add to Cart</Text>
+              <Text style={styles.addBtnText} numberOfLines={1}>Add to Cart</Text>
             </Pressable>
           ) : (
             <View style={styles.qtyStepper}>
@@ -352,8 +352,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#0066FF',
     borderRadius: 8,
-    paddingVertical: 5,
-    paddingHorizontal: 6,
+    height: 30,
+    paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -366,8 +366,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F1F5F9',
     borderRadius: 8,
-    paddingVertical: 5,
+    height: 30,
+    paddingHorizontal: 4,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   disabledAddBtnText: {
     color: '#94A3B8',

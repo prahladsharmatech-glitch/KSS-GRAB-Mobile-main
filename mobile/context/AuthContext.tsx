@@ -31,20 +31,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const restoreSession = async () => {
     try {
-      const savedCustomer = await getItem<UserProfile>('grabit_customer_user');
-      const savedSeller = await getItem<UserProfile>('grabit_seller_profile');
       const savedUser = await getItem<UserProfile>('grabit_user');
+      const savedSeller = await getItem<UserProfile>('grabit_seller_profile');
+      const savedCustomer = await getItem<UserProfile>('grabit_customer_user');
       const token = await getSecureItem('grabit_session');
 
-      if (savedCustomer && savedCustomer.role === 'customer') {
-        setUser(savedCustomer);
-        setRole('customer');
-      } else if (savedUser) {
+      if (savedUser && savedUser.role) {
         setUser(savedUser);
-        setRole(savedUser.role || 'customer');
-      } else if (savedSeller) {
+        setRole(savedUser.role);
+      } else if (savedSeller && savedSeller.role === 'seller') {
         setUser(savedSeller);
         setRole('seller');
+      } else if (savedCustomer && savedCustomer.role === 'customer') {
+        setUser(savedCustomer);
+        setRole('customer');
       } else if (token) {
         const defaultUser: UserProfile = { role: 'customer', name: 'Customer User', phone: '+919360843281' };
         setUser(defaultUser);
@@ -68,10 +68,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (userObj.role === 'customer') {
       promises.push(setItem('grabit_customer_user', userObj));
       promises.push(setSecureItem('grabit_customer_token', token));
+      promises.push(removeItem('grabit_seller_profile'));
+      promises.push(removeSecureItem('grabit_seller_access'));
     }
     if (userObj.role === 'seller' || userObj.role === 'admin') {
       promises.push(setSecureItem('grabit_seller_access', token));
       promises.push(setItem('grabit_seller_profile', userObj));
+      promises.push(removeItem('grabit_customer_user'));
+      promises.push(removeSecureItem('grabit_customer_token'));
     }
     await Promise.all(promises);
     setUser(userObj);

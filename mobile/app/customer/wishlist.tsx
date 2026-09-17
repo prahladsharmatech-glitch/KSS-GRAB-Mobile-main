@@ -131,9 +131,7 @@ export default function WishlistPage() {
         ) : (
           <View style={styles.gridWrapper}>
             {wishlist.map((item) => (
-              <View key={item.id} style={styles.cardCol}>
-                <ProductCard product={item} />
-              </View>
+              <ProductCard key={item.id} product={item} width="48.5%" />
             ))}
           </View>
         )}
@@ -268,11 +266,7 @@ const styles = StyleSheet.create({
   gridWrapper: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginHorizontal: -4,
-  },
-  cardCol: {
-    width: '50%',
-    paddingHorizontal: 4,
-    marginBottom: 12,
+    justifyContent: 'space-between',
+    marginBottom: SPACING.md,
   },
 });

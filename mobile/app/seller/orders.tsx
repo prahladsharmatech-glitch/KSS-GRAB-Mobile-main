@@ -215,96 +215,6 @@ export default function SellerOrdersScreen() {
   // Packing Slip & Reassign Modal State
   const [selectedPackingSlip, setSelectedPackingSlip] = useState<Order | null>(null);
   const [selectedReassignOrder, setSelectedReassignOrder] = useState<Order | null>(null);
-
-<<<<<<< HEAD
-=======
-  // Helper to normalize any order object into standard seller format
-  const normalizeSellerOrder = (o: any): Order => {
-    let rawItems: any[] = [];
-    if (Array.isArray(o.items) && o.items.length > 0) {
-      rawItems = o.items;
-    } else if (typeof o.items === 'string') {
-      try { rawItems = JSON.parse(o.items); } catch { rawItems = []; }
-    }
-
-    let normalizedItems = (Array.isArray(rawItems) ? rawItems : []).map((it: any, iIdx: number) => ({
-      id: String(it.id || it.product_id || `item-${iIdx}`),
-      name: String(it.name || it.product_name || 'Ordered Product'),
-      quantity: Number(it.quantity || it.qty || 1),
-      price: Number(it.price || it.unit_price || 0),
-      image: it.image || it.image_url || 'apples-real.jpg'
-    }));
-
-    const calculatedSub = normalizedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const totalVal = Number(o.total || o.total_amount || calculatedSub || 99);
-
-    const custPhone = String(o.customer_phone || o.phone || '').replace(/\D/g, '');
-    const last10 = custPhone.length >= 10 ? custPhone.slice(-10) : custPhone;
-    const formattedPhone = last10 ? `+91 ${last10}` : '+91 9360843281';
-
-    const rawCustName = String(o.customer_name || o.customerName || o.name || '').trim();
-    const validCustName = (!rawCustName || rawCustName.toLowerCase() === 'customer' || rawCustName.toLowerCase() === 'guest')
-      ? 'Akash'
-      : rawCustName;
-
-    if (normalizedItems.length === 0) {
-      normalizedItems = [{
-        id: 'item-1',
-        name: 'Fresh Grocery & Essentials Pack',
-        quantity: 1,
-        price: totalVal,
-        image: 'apples-real.jpg'
-      }];
-    }
-
-    let rawStatus = String(o.status || 'PLACED').trim().toUpperCase();
-    if (rawStatus === 'PENDING' || rawStatus === 'CONFIRMED') {
-      rawStatus = 'PLACED';
-    } else if (rawStatus === 'PACKING') {
-      rawStatus = 'PREPARING';
-    } else if (rawStatus === 'READY') {
-      rawStatus = 'READY_FOR_PICKUP';
-    }
-
-    return {
-      ...o,
-      id: formatDisplayOrderId(o),
-      rawId: String(o.rawId || o.id || ''),
-      customer_name: validCustName,
-      customer_phone: formattedPhone,
-      address: String(o.delivery_address || o.address || 'KSS Metro Tech Park, Sector 4, Bengaluru'),
-      delivery_address: String(o.delivery_address || o.address || 'KSS Metro Tech Park, Sector 4, Bengaluru'),
-      status: rawStatus as Order['status'],
-      items: normalizedItems,
-      subtotal: calculatedSub || totalVal,
-      delivery_fee: Number(o.delivery_fee || 0),
-      discount: Number(o.discount || 0),
-      total: totalVal,
-      payment_method: String(o.payment_method || 'UPI').toUpperCase(),
-      payment_status: String(o.payment_status || 'PAID').toUpperCase(),
-    };
-  };
-
-  // Fetch real orders from backend with fallback
-  const fetchOrdersSilent = useCallback(async () => {
-    refreshOrders();
-    try {
-      const res = await get('/store/orders');
-      let apiOrders: Order[] = [];
-      const listData = Array.isArray(res) ? res : (Array.isArray(res?.orders) ? res.orders : []);
-      if (listData.length > 0) {
-        apiOrders = listData.map((o: any) => normalizeSellerOrder(o));
-        setOrders(apiOrders);
-        await setItem('grabit_seller_orders', apiOrders).catch(() => {});
-      }
-    } catch {
-      // Retain existing live fetched orders
-    } finally {
-      setLoading(false);
-    }
-  }, [refreshOrders]);
-
->>>>>>> 953af6a9ab3325be0f9b1dd2f892f76a542fc98c
   // Fetch real riders from backend with fallback
   const fetchRiders = useCallback(async () => {
     try {
@@ -376,38 +286,25 @@ export default function SellerOrdersScreen() {
       pendingTransitionsRef.current.set(backendOrderId, { status: newStatus, timestamp: now });
     }
 
-    // 3. Optimistic local update
     let previousOrders: Order[] = [];
     setOrders((prev) => {
       previousOrders = prev;
-<<<<<<< HEAD
       const updated = prev.map((o) =>
-        o.id === displayOrderId || o.rawId === backendOrderId || o.rawId === displayOrderId
+        o.id === displayOrderId || o.rawId === backendOrderId || o.rawId === displayOrderId || isSameOrderId(o, order)
           ? { ...o, status: newStatus }
           : o
       );
       setItem('grabit_seller_orders', updated).catch(() => {});
       return updated;
     });
-=======
-      const updated = prev.map((o) => (isSameOrderId(o, orderId) ? { ...o, status: newStatus } : o));
-      setItem('grabit_seller_orders', updated).catch(() => {});
-      return updated;
-    });
-    showToast(`Order updated to ${newStatus}`, 'success');
->>>>>>> 953af6a9ab3325be0f9b1dd2f892f76a542fc98c
 
     try {
       await patch(`/orders/${encodeURIComponent(backendOrderId)}/status`, {
         status: newStatus.toLowerCase(),
       });
       invalidateOrdersCache();
-<<<<<<< HEAD
       refreshOrders();
       showToast(`Order #${displayOrderId} updated to ${newStatus}`, 'success');
-=======
-      await fetchOrdersSilent();
->>>>>>> 953af6a9ab3325be0f9b1dd2f892f76a542fc98c
     } catch (err: any) {
       // Revert optimistic update on failure
       pendingTransitionsRef.current.delete(displayOrderId);
@@ -877,34 +774,24 @@ export default function SellerOrdersScreen() {
 
   const filteredOrders = React.useMemo(() => {
     return orders.filter((order) => {
-<<<<<<< HEAD
-      const isTerminal = order.status === 'DELIVERED' || order.status === 'CANCELLED';
-      let matchesTab = false;
-      if (activeTab === 'ALL') {
-        // Main active queue shows in-progress orders only!
-        matchesTab = !isTerminal;
-      } else {
-        matchesTab = order.status === activeTab;
-=======
       const st = String(order.status || '').trim().toUpperCase();
       const tab = String(activeTab || 'ALL').trim().toUpperCase();
-      let matchesTab = tab === 'ALL' || st === tab;
-      if (tab === 'PLACED') {
+      let matchesTab = false;
+      if (tab === 'ALL') {
+        matchesTab = st !== 'DELIVERED' && st !== 'CANCELLED';
+      } else if (tab === 'PLACED') {
         matchesTab = st === 'PLACED' || st === 'PENDING' || st === 'CONFIRMED';
       } else if (tab === 'PREPARING') {
         matchesTab = st === 'PREPARING' || st === 'PACKING';
       } else if (tab === 'READY_FOR_PICKUP') {
         matchesTab = st === 'READY_FOR_PICKUP' || st === 'READY';
->>>>>>> 953af6a9ab3325be0f9b1dd2f892f76a542fc98c
+      } else {
+        matchesTab = st === tab;
       }
 
       const q = searchQuery.toLowerCase();
       const matchesSearch =
-<<<<<<< HEAD
         (order.displayId || order.id || '').toLowerCase().includes(q) ||
-=======
-        (order.id || '').toLowerCase().includes(q) ||
->>>>>>> 953af6a9ab3325be0f9b1dd2f892f76a542fc98c
         (order.rawId || '').toLowerCase().includes(q) ||
         (order.customer_name || '').toLowerCase().includes(q) ||
         (order.customer_phone || '').includes(q);
@@ -1126,63 +1013,6 @@ export default function SellerOrdersScreen() {
                       <Text style={styles.slipBtnText}>Slip</Text>
                     </Pressable>
 
-<<<<<<< HEAD
-                    {(item.status === 'READY_FOR_PICKUP' || item.status === 'OUT_FOR_DELIVERY' || item.rider_name || item.rider_id) && (
-                      <Pressable
-                        style={styles.reassignBtn}
-                        onPress={() => setSelectedReassignOrder(item)}
-                        disabled={isUpdating}
-                      >
-                        <UserCheck size={14} color="#0066FF" style={{ marginRight: 4 }} />
-                        <Text style={styles.reassignBtnText}>Reassign</Text>
-                      </Pressable>
-                    )}
-
-                    {item.status === 'PLACED' && (
-                      <Pressable
-                        style={[styles.acceptBtn, isUpdating && { opacity: 0.7 }]}
-                        onPress={() => handleUpdateStatus(item, 'PREPARING')}
-                        disabled={isUpdating}
-                      >
-                        {isUpdating ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 6 }} />
-                        ) : (
-                          <PackageCheck size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-                        )}
-                        <Text style={styles.actionBtnText}>{isUpdating ? 'Accepting...' : 'Accept & Start'}</Text>
-                      </Pressable>
-                    )}
-
-                    {item.status === 'PREPARING' && (
-                      <Pressable
-                        style={[styles.readyBtn, isUpdating && { opacity: 0.7 }]}
-                        onPress={() => handleUpdateStatus(item, 'READY_FOR_PICKUP')}
-                        disabled={isUpdating}
-                      >
-                        {isUpdating ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 6 }} />
-                        ) : (
-                          <CheckCircle size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-                        )}
-                        <Text style={styles.actionBtnText}>{isUpdating ? 'Marking Ready...' : 'Mark Ready'}</Text>
-                      </Pressable>
-                    )}
-
-                    {item.status === 'READY_FOR_PICKUP' && (
-                      <Pressable
-                        style={[styles.dispatchBtn, isUpdating && { opacity: 0.7 }]}
-                        onPress={() => handleHandover(item)}
-                        disabled={isUpdating}
-                      >
-                        {isUpdating ? (
-                          <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 6 }} />
-                        ) : (
-                          <Truck size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-                        )}
-                        <Text style={styles.actionBtnText}>{isUpdating ? 'Handing Over...' : 'Handover'}</Text>
-                      </Pressable>
-                    )}
-=======
                     {(() => {
                       const st = String(item.status || '').trim().toUpperCase();
                       const isPlaced = st === 'PLACED' || st === 'PENDING' || st === 'CONFIRMED';
@@ -1196,6 +1026,7 @@ export default function SellerOrdersScreen() {
                             <Pressable
                               style={styles.reassignBtn}
                               onPress={() => setSelectedReassignOrder(item)}
+                              disabled={isUpdating}
                             >
                               <UserCheck size={14} color="#0066FF" style={{ marginRight: 4 }} />
                               <Text style={styles.reassignBtnText}>Reassign</Text>
@@ -1204,37 +1035,51 @@ export default function SellerOrdersScreen() {
 
                           {isPlaced && (
                             <Pressable
-                              style={styles.acceptBtn}
-                              onPress={() => handleUpdateStatus(item.id, 'PREPARING')}
+                              style={[styles.acceptBtn, isUpdating && { opacity: 0.7 }]}
+                              onPress={() => handleUpdateStatus(item, 'PREPARING')}
+                              disabled={isUpdating}
                             >
-                              <PackageCheck size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-                              <Text style={styles.actionBtnText}>Accept & Pack</Text>
+                              {isUpdating ? (
+                                <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 6 }} />
+                              ) : (
+                                <PackageCheck size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+                              )}
+                              <Text style={styles.actionBtnText}>{isUpdating ? 'Accepting...' : 'Accept & Start'}</Text>
                             </Pressable>
                           )}
 
                           {isPreparing && (
                             <Pressable
-                              style={styles.readyBtn}
-                              onPress={() => handleUpdateStatus(item.id, 'READY_FOR_PICKUP')}
+                              style={[styles.readyBtn, isUpdating && { opacity: 0.7 }]}
+                              onPress={() => handleUpdateStatus(item, 'READY_FOR_PICKUP')}
+                              disabled={isUpdating}
                             >
-                              <CheckCircle size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-                              <Text style={styles.actionBtnText}>Mark Ready for Pickup</Text>
+                              {isUpdating ? (
+                                <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 6 }} />
+                              ) : (
+                                <CheckCircle size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+                              )}
+                              <Text style={styles.actionBtnText}>{isUpdating ? 'Marking Ready...' : 'Mark Ready'}</Text>
                             </Pressable>
                           )}
 
                           {isReady && (
                             <Pressable
-                              style={styles.dispatchBtn}
-                              onPress={() => handleUpdateStatus(item.id, 'OUT_FOR_DELIVERY')}
+                              style={[styles.dispatchBtn, isUpdating && { opacity: 0.7 }]}
+                              onPress={() => handleHandover(item)}
+                              disabled={isUpdating}
                             >
-                              <Truck size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-                              <Text style={styles.actionBtnText}>Handover Rider</Text>
+                              {isUpdating ? (
+                                <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 6 }} />
+                              ) : (
+                                <Truck size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+                              )}
+                              <Text style={styles.actionBtnText}>{isUpdating ? 'Handing Over...' : 'Handover'}</Text>
                             </Pressable>
                           )}
                         </>
                       );
                     })()}
->>>>>>> 953af6a9ab3325be0f9b1dd2f892f76a542fc98c
                   </ScrollView>
                 </View>
               </View>

@@ -7,6 +7,7 @@ import {
   Image,
   StyleSheet,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
@@ -44,6 +45,19 @@ export default function SellerDashboardScreen() {
   const router = useRouter();
   const { logout } = useAuth();
   const { showToast } = useToast();
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    try {
+      const { BackHandler: BH } = require('react-native');
+      if (!BH || typeof BH.addEventListener !== 'function') return;
+      const backAction = () => true;
+      const sub = BH.addEventListener('hardwareBackPress', backAction);
+      return () => {
+        if (sub && typeof sub.remove === 'function') sub.remove();
+      };
+    } catch {}
+  }, []);
 
   const [storeStatus, setStoreStatus] = useState<'online' | 'busy' | 'offline'>('online');
   const [activePeriod, setActivePeriod] = useState<'daily' | 'weekly' | 'monthly' | 'yearly'>('daily');

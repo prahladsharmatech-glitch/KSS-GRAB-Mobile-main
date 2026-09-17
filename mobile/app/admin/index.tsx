@@ -250,6 +250,19 @@ export default function AdminPortalScreen({ initialTab }: { initialTab?: string 
   const [timeFilter, setTimeFilter] = useState<'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'>('MONTHLY');
 
   useEffect(() => {
+    if (Platform.OS === 'web') return;
+    try {
+      const { BackHandler: BH } = require('react-native');
+      if (!BH || typeof BH.addEventListener !== 'function') return;
+      const backAction = () => true;
+      const sub = BH.addEventListener('hardwareBackPress', backAction);
+      return () => {
+        if (sub && typeof sub.remove === 'function') sub.remove();
+      };
+    } catch {}
+  }, []);
+
+  useEffect(() => {
     if (initialTab) {
       setActiveTab(initialTab);
     }

@@ -68,6 +68,7 @@ export interface OrderItem {
 export interface Order {
   id: string;
   rawId?: string;
+  displayId?: string;
   name?: string;
   phone?: string;
   delivery_address?: string;
