@@ -27,6 +27,8 @@ import { getCloudinaryUrl } from '../../services/cloudinary';
 import { Product, Category } from '../../types';
 import { useToast } from '../../context/ToastContext';
 import { BatchLoadingSkeleton } from '../../components/BatchLoadingSkeleton';
+import { products as defaultProducts } from '../../data/products';
+import { categories as defaultCategories } from '../../data/categories';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import {
   Package,
@@ -43,8 +45,8 @@ import {
 
 export default function SellerProductsScreen() {
   const { showToast } = useToast();
-  const [productList, setProductList] = useState<Product[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [productList, setProductList] = useState<Product[]>(() => defaultProducts as Product[]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
   // Search & Filter
@@ -55,7 +57,7 @@ export default function SellerProductsScreen() {
   const [isBatchLoading, setIsBatchLoading] = useState<boolean>(false);
 
   // Categories & Subcategories
-  const [availableCategories, setAvailableCategories] = useState<Category[]>([]);
+  const [availableCategories, setAvailableCategories] = useState<Category[]>(() => defaultCategories as Category[]);
   const [availableSubcategories, setAvailableSubcategories] = useState<Array<{ id: string; label: string; name: string }>>([]);
   const [isFormCategoryPickerOpen, setIsFormCategoryPickerOpen] = useState(false);
   const [isFormSubcategoryPickerOpen, setIsFormSubcategoryPickerOpen] = useState(false);
@@ -173,7 +175,7 @@ export default function SellerProductsScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       quality: 0.8,
       allowsEditing: true,
     });

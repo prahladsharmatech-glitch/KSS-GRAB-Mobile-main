@@ -52,7 +52,18 @@ export const BASE_FLEET_RIDERS: FleetRider[] = [
 export const PARTNERS_KEY = 'grabit_partners';
 export const SELLER_FLEET_KEY = 'grabit_seller_fleet_riders';
 
-// ── Pub/Sub for Instant Multi-Portal Sync ──
+// ── Pub/Sub and Memory Cache for Instant Multi-Portal Sync ──
+let cachedRiders: FleetRider[] | null = null;
+let lastRidersFetchTime = 0;
+let inFlightRidersPromise: Promise<FleetRider[]> | null = null;
+const RIDERS_CACHE_TTL = 15000; // 15s
+
+export const invalidateRidersCache = () => {
+  cachedRiders = null;
+  lastRidersFetchTime = 0;
+  inFlightRidersPromise = null;
+};
+
 type PartnersListener = () => void;
 const partnersListeners = new Set<PartnersListener>();
 
@@ -64,6 +75,7 @@ export const onPartnersUpdate = (listener: PartnersListener): (() => void) => {
 };
 
 export const notifyPartnersUpdated = () => {
+  invalidateRidersCache();
   partnersListeners.forEach((l) => {
     try {
       l();
@@ -111,70 +123,83 @@ export const normalizeFleetRider = (r: any, idx = 0): FleetRider => {
  * 5. Direct Supabase profiles query (fallback if API unreachable)
  */
 export const getSynchronizedRiders = async (): Promise<FleetRider[]> => {
-  const ridersList: FleetRider[] = [];
+  const now = Date.now();
+  if (cachedRiders && now - lastRidersFetchTime < RIDERS_CACHE_TTL) {
+    return cachedRiders;
+  }
+  if (inFlightRidersPromise) {
+    return inFlightRidersPromise;
+  }
 
-  // Helper to add riders without duplication
-  const addRider = (r: FleetRider) => {
-    const cleanPhone = r.phone ? r.phone.replace(/\D/g, '').slice(-10) : '';
-    const existingIdx = ridersList.findIndex(
-      (existing) =>
-        (existing.id && r.id && existing.id === r.id) ||
-        (cleanPhone && existing.phone && existing.phone.replace(/\D/g, '').slice(-10) === cleanPhone)
-    );
-    if (existingIdx >= 0) {
-      ridersList[existingIdx] = { ...ridersList[existingIdx], ...r };
-    } else {
-      ridersList.push(r);
-    }
-  };
+  inFlightRidersPromise = (async () => {
+    const ridersList: FleetRider[] = [];
 
-  // 1. Seed with base fleet
-  BASE_FLEET_RIDERS.forEach((r) => addRider(r));
+    // Helper to add riders without duplication
+    const addRider = (r: FleetRider) => {
+      const cleanPhone = r.phone ? r.phone.replace(/\D/g, '').slice(-10) : '';
+      const existingIdx = ridersList.findIndex(
+        (existing) =>
+          (existing.id && r.id && existing.id === r.id) ||
+          (cleanPhone && existing.phone && existing.phone.replace(/\D/g, '').slice(-10) === cleanPhone)
+      );
+      if (existingIdx >= 0) {
+        ridersList[existingIdx] = { ...ridersList[existingIdx], ...r };
+      } else {
+        ridersList.push(r);
+      }
+    };
 
-  // 2. Overlay locally stored partners added via Admin
-  try {
-    const stored = await getItem<any[]>(PARTNERS_KEY);
-    if (Array.isArray(stored)) {
-      stored.forEach((p, idx) => {
-        const role = String(p.role || '').toLowerCase();
-        if (role === 'delivery_agent' || role === 'rider' || role === 'delivery' || role === 'delivery_partner') {
+    // 1. Seed with base fleet
+    BASE_FLEET_RIDERS.forEach((r) => addRider(r));
+
+    try {
+      // 2, 3, 4. Concurrently fetch stored admin partners, seller fleet, and live API riders
+      const [storedAdmin, storedSeller, apiRiders] = await Promise.all([
+        getItem<any[]>(PARTNERS_KEY).catch(() => null),
+        getItem<any[]>(SELLER_FLEET_KEY).catch(() => null),
+        get('/delivery/riders').catch(() => null),
+      ]);
+
+      if (Array.isArray(storedAdmin)) {
+        storedAdmin.forEach((p, idx) => {
+          const role = String(p.role || '').toLowerCase();
+          if (role === 'delivery_agent' || role === 'rider' || role === 'delivery' || role === 'delivery_partner') {
+            addRider(normalizeFleetRider(p, idx));
+          }
+        });
+      }
+
+      if (Array.isArray(storedSeller)) {
+        storedSeller.forEach((p, idx) => {
           addRider(normalizeFleetRider(p, idx));
-        }
-      });
-    }
-  } catch {}
+        });
+      }
 
-  // 3. Overlay locally stored seller fleet riders
-  try {
-    const sellerFleet = await getItem<any[]>(SELLER_FLEET_KEY);
-    if (Array.isArray(sellerFleet)) {
-      sellerFleet.forEach((p, idx) => {
-        addRider(normalizeFleetRider(p, idx));
-      });
-    }
-  } catch {}
+      if (Array.isArray(apiRiders) && apiRiders.length > 0) {
+        apiRiders.forEach((r, idx) => {
+          addRider(normalizeFleetRider(r, idx));
+        });
+      } else {
+        // 5. Fallback to Supabase query only if live backend returned nothing
+        try {
+          const cloudRiders = await fetchDirectFromSupabase<any[]>('delivery/riders');
+          if (Array.isArray(cloudRiders) && cloudRiders.length > 0) {
+            cloudRiders.forEach((r, idx) => {
+              addRider(normalizeFleetRider(r, idx));
+            });
+          }
+        } catch {}
+      }
+    } catch {}
 
-  // 4. Overlay live backend riders
-  try {
-    const apiRiders = await get('/delivery/riders');
-    if (Array.isArray(apiRiders) && apiRiders.length > 0) {
-      apiRiders.forEach((r, idx) => {
-        addRider(normalizeFleetRider(r, idx));
-      });
-    }
-  } catch {}
+    cachedRiders = ridersList;
+    lastRidersFetchTime = Date.now();
+    return ridersList;
+  })().finally(() => {
+    inFlightRidersPromise = null;
+  });
 
-  // 5. Direct Supabase query fallback for riders
-  try {
-    const cloudRiders = await fetchDirectFromSupabase<any[]>('delivery/riders');
-    if (Array.isArray(cloudRiders) && cloudRiders.length > 0) {
-      cloudRiders.forEach((r, idx) => {
-        addRider(normalizeFleetRider(r, idx));
-      });
-    }
-  } catch {}
-
-  return ridersList;
+  return inFlightRidersPromise;
 };
 
 /**

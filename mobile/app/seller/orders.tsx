@@ -86,6 +86,20 @@ export const INITIAL_ORDERS: Order[] = [];
 
 type OrderTab = 'ALL' | 'PLACED' | 'PREPARING' | 'READY_FOR_PICKUP' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'CANCELLED';
 
+const ORDER_STATUS_RANKS: Record<string, number> = {
+  PENDING: 1,
+  PLACED: 1,
+  CONFIRMED: 2,
+  PREPARING: 3,
+  PACKING: 3,
+  READY_FOR_PICKUP: 4,
+  READY: 4,
+  OUT_FOR_DELIVERY: 5,
+  DELIVERING: 5,
+  DELIVERED: 6,
+  CANCELLED: 7,
+};
+
 export default function SellerOrdersScreen() {
   const { showToast } = useToast();
   // ── Real-time orders via SSE (web) or 3s polling (native) ──────────────────
@@ -167,6 +181,111 @@ export default function SellerOrdersScreen() {
   const [updatingOrderIds, setUpdatingOrderIds] = useState<Record<string, boolean>>({});
   const pendingTransitionsRef = useRef<Map<string, { status: Order['status']; timestamp: number }>>(new Map());
 
+  // Register in-flight status transitions across all possible keys/aliases
+  const registerPendingTransition = useCallback((orderOrId: any, status: Order['status']) => {
+    const now = Date.now();
+    const rawKeys: (string | undefined | null)[] = [];
+    if (typeof orderOrId === 'string') {
+      rawKeys.push(orderOrId);
+    } else if (orderOrId && typeof orderOrId === 'object') {
+      rawKeys.push(
+        orderOrId.id,
+        orderOrId.rawId,
+        orderOrId.displayId,
+        orderOrId.display_id,
+        orderOrId.orderNumber,
+        orderOrId.order_number,
+        formatDisplayOrderId(orderOrId)
+      );
+    }
+    for (const rk of rawKeys) {
+      if (!rk) continue;
+      const s = String(rk).trim();
+      if (!s) continue;
+      pendingTransitionsRef.current.set(s, { status, timestamp: now });
+      pendingTransitionsRef.current.set(s.toLowerCase(), { status, timestamp: now });
+      pendingTransitionsRef.current.set(s.toUpperCase(), { status, timestamp: now });
+      const clean = s.replace(/^(GB|ORD)-?/i, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      if (clean) {
+        pendingTransitionsRef.current.set(clean, { status, timestamp: now });
+        if (clean.length >= 6) {
+          pendingTransitionsRef.current.set(clean.slice(0, 6), { status, timestamp: now });
+          pendingTransitionsRef.current.set(`GB-${clean.slice(0, 6).toUpperCase()}`, { status, timestamp: now });
+        }
+      }
+    }
+  }, []);
+
+  // Clear pending status transitions across all keys/aliases
+  const clearPendingTransition = useCallback((orderOrId: any) => {
+    const rawKeys: (string | undefined | null)[] = [];
+    if (typeof orderOrId === 'string') {
+      rawKeys.push(orderOrId);
+    } else if (orderOrId && typeof orderOrId === 'object') {
+      rawKeys.push(
+        orderOrId.id,
+        orderOrId.rawId,
+        orderOrId.displayId,
+        orderOrId.display_id,
+        orderOrId.orderNumber,
+        orderOrId.order_number,
+        formatDisplayOrderId(orderOrId)
+      );
+    }
+    for (const rk of rawKeys) {
+      if (!rk) continue;
+      const s = String(rk).trim();
+      if (!s) continue;
+      pendingTransitionsRef.current.delete(s);
+      pendingTransitionsRef.current.delete(s.toLowerCase());
+      pendingTransitionsRef.current.delete(s.toUpperCase());
+      const clean = s.replace(/^(GB|ORD)-?/i, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      if (clean) {
+        pendingTransitionsRef.current.delete(clean);
+        if (clean.length >= 6) {
+          pendingTransitionsRef.current.delete(clean.slice(0, 6));
+          pendingTransitionsRef.current.delete(`GB-${clean.slice(0, 6).toUpperCase()}`);
+        }
+      }
+    }
+  }, []);
+
+  // Retrieve any active in-flight transition for this order
+  const getPendingTransition = useCallback((order: any, now: number): Order['status'] | undefined => {
+    const rawKeys = [
+      order.id,
+      order.rawId,
+      order.displayId,
+      order.display_id,
+      order.orderNumber,
+      order.order_number,
+      formatDisplayOrderId(order),
+    ];
+    for (const rk of rawKeys) {
+      if (!rk) continue;
+      const s = String(rk).trim();
+      if (!s) continue;
+      const hit =
+        pendingTransitionsRef.current.get(s) ||
+        pendingTransitionsRef.current.get(s.toLowerCase()) ||
+        pendingTransitionsRef.current.get(s.toUpperCase());
+      if (hit && now - hit.timestamp < 15000) {
+        return hit.status;
+      }
+      const clean = s.replace(/^(GB|ORD)-?/i, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      if (clean) {
+        const cleanHit =
+          pendingTransitionsRef.current.get(clean) ||
+          (clean.length >= 6 ? pendingTransitionsRef.current.get(clean.slice(0, 6)) : undefined) ||
+          (clean.length >= 6 ? pendingTransitionsRef.current.get(`GB-${clean.slice(0, 6).toUpperCase()}`) : undefined);
+        if (cleanHit && now - cleanHit.timestamp < 15000) {
+          return cleanHit.status;
+        }
+      }
+    }
+    return undefined;
+  }, []);
+
   // Check whether two order lists have identical keys, statuses, and rider assignments
   const isIdenticalOrderList = useCallback((prevList: Order[], nextList: Order[]): boolean => {
     if (prevList.length !== nextList.length) return false;
@@ -187,32 +306,47 @@ export default function SellerOrdersScreen() {
     return true;
   }, []);
 
-  // Sync live orders into local state with pending transition protection
+  // Sync live orders into local state with pending transition & monotonic progression protection
   useEffect(() => {
     if (liveOrders && liveOrders.length > 0) {
       const normalized = normalizeOrders(liveOrders);
       const now = Date.now();
 
-      // Clean expired transitions (> 10s) and apply active ones over stale incoming poll data
-      const merged = normalized.map((ord) => {
-        const p1 = pendingTransitionsRef.current.get(ord.id);
-        const p2 = ord.rawId ? pendingTransitionsRef.current.get(ord.rawId) : undefined;
-        const pending = p1 || p2;
-
-        if (pending && now - pending.timestamp < 10000) {
-          return { ...ord, status: pending.status };
+      // Clean expired transitions (> 15s)
+      for (const [k, v] of pendingTransitionsRef.current.entries()) {
+        if (now - v.timestamp >= 15000) {
+          pendingTransitionsRef.current.delete(k);
         }
-        return ord;
-      });
+      }
 
       setOrders((prev) => {
+        const merged = normalized.map((ord) => {
+          // 1. In-flight / recently completed transition takes absolute precedence
+          const pendingStatus = getPendingTransition(ord, now);
+          if (pendingStatus) {
+            return { ...ord, status: pendingStatus };
+          }
+
+          // 2. Monotonic progression guard: never let a stale poll regress an active order backward
+          const existing = prev.find((p) => isSameOrderId(p, ord));
+          if (existing) {
+            const currentRank = ORDER_STATUS_RANKS[String(existing.status || '').toUpperCase()] || 0;
+            const incomingRank = ORDER_STATUS_RANKS[String(ord.status || '').toUpperCase()] || 0;
+            // Never regress backward unless explicit cancellation
+            if (ord.status !== 'CANCELLED' && incomingRank < currentRank) {
+              return { ...ord, status: existing.status };
+            }
+          }
+          return ord;
+        });
+
         if (isIdenticalOrderList(prev, merged)) {
           return prev; // Retain exact state reference to prevent re-render flicker
         }
         return merged;
       });
     }
-  }, [liveOrders, normalizeOrders, isIdenticalOrderList]);
+  }, [liveOrders, normalizeOrders, isIdenticalOrderList, getPendingTransition]);
 
   // Packing Slip & Reassign Modal State
   const [selectedPackingSlip, setSelectedPackingSlip] = useState<Order | null>(null);
@@ -319,11 +453,11 @@ export default function SellerOrdersScreen() {
       ...(backendOrderId ? { [backendOrderId]: true } : {}),
     }));
 
-    // 2. Protect against stale polling overwrite
-    const now = Date.now();
-    pendingTransitionsRef.current.set(displayOrderId, { status: newStatus, timestamp: now });
+    // 2. Protect against stale polling overwrite across all aliases
+    registerPendingTransition(order, newStatus);
+    registerPendingTransition(displayOrderId, newStatus);
     if (backendOrderId) {
-      pendingTransitionsRef.current.set(backendOrderId, { status: newStatus, timestamp: now });
+      registerPendingTransition(backendOrderId, newStatus);
     }
 
     let previousOrders: Order[] = [];
@@ -349,8 +483,9 @@ export default function SellerOrdersScreen() {
       showToast(`Order #${displayOrderId} updated to ${newStatus}`, 'success');
     } catch (err: any) {
       // Revert optimistic update on failure
-      pendingTransitionsRef.current.delete(displayOrderId);
-      if (backendOrderId) pendingTransitionsRef.current.delete(backendOrderId);
+      clearPendingTransition(order);
+      clearPendingTransition(displayOrderId);
+      if (backendOrderId) clearPendingTransition(backendOrderId);
       if (previousOrders.length > 0) {
         setOrders(previousOrders);
         setItem('grabit_seller_orders', previousOrders).catch(() => {});
@@ -441,17 +576,18 @@ export default function SellerOrdersScreen() {
       ...(backendOrderId ? { [backendOrderId]: true } : {}),
     }));
 
-    const now = Date.now();
-    pendingTransitionsRef.current.set(displayOrderId, { status: 'OUT_FOR_DELIVERY' as Order['status'], timestamp: now });
+    // Protect against stale polling overwrite across all aliases
+    registerPendingTransition(order, 'OUT_FOR_DELIVERY');
+    registerPendingTransition(displayOrderId, 'OUT_FOR_DELIVERY');
     if (backendOrderId) {
-      pendingTransitionsRef.current.set(backendOrderId, { status: 'OUT_FOR_DELIVERY' as Order['status'], timestamp: now });
+      registerPendingTransition(backendOrderId, 'OUT_FOR_DELIVERY');
     }
 
     let previousOrders: Order[] = [];
     setOrders((prev) => {
       previousOrders = prev;
       const updated: Order[] = prev.map((o) =>
-        o.id === displayOrderId || o.rawId === backendOrderId || o.rawId === displayOrderId
+        o.id === displayOrderId || o.rawId === backendOrderId || o.rawId === displayOrderId || isSameOrderId(o, order)
           ? { ...o, status: 'OUT_FOR_DELIVERY' as Order['status'] }
           : o
       );
@@ -474,8 +610,9 @@ export default function SellerOrdersScreen() {
       refreshOrders();
       showToast('Order handed over to the rider', 'success');
     } catch (err: any) {
-      pendingTransitionsRef.current.delete(displayOrderId);
-      if (backendOrderId) pendingTransitionsRef.current.delete(backendOrderId);
+      clearPendingTransition(order);
+      clearPendingTransition(displayOrderId);
+      if (backendOrderId) clearPendingTransition(backendOrderId);
       if (previousOrders.length > 0) {
         setOrders(previousOrders);
         setItem('grabit_seller_orders', previousOrders).catch(() => {});

@@ -409,20 +409,29 @@ def normalize_order_dict(o: dict) -> dict:
     if discount != 0.0:
         o["discount"] = discount
 
-    # Prefer rawId (canonical UUID) when deriving the display alias.
-    # This matches the create_order() formula: GB-<first 6 hex chars of UUID, dashes stripped>.
-    # If rawId is a valid UUID, use it. Otherwise fall back to id.
-    raw_id_cand = str(o.get("rawId") or "").strip()
-    id_cand = str(o.get("id") or "").strip()
-    oid = raw_id_cand if (raw_id_cand and is_valid_uuid(raw_id_cand)) else (id_cand or raw_id_cand)
-    if oid:
-        # Strip dashes so UUID "a3f1e7b2-..." → "a3f1e7b2..." → first 6 → "A3F1E7"
-        clean_hex = oid.replace("-", "").replace("GB-", "").replace("gb-", "").strip()
-        disp = f"GB-{clean_hex[:6].upper()}" if len(clean_hex) >= 6 else f"GB-{clean_hex.upper()}"
+    # Preserve existing display alias if already present and formatted
+    existing_disp = o.get("display_id") or o.get("order_number") or o.get("displayId") or o.get("orderNumber")
+    if existing_disp and str(existing_disp).strip().upper().startswith("GB-"):
+        disp = str(existing_disp).strip().upper()
         o["order_number"] = disp
         o["orderNumber"] = disp
         o["display_id"] = disp
         o["displayId"] = disp
+    else:
+        # Prefer rawId (canonical UUID) when deriving the display alias.
+        # This matches the create_order() formula: GB-<first 6 hex chars of UUID, dashes stripped>.
+        # If rawId is a valid UUID, use it. Otherwise fall back to id.
+        raw_id_cand = str(o.get("rawId") or "").strip()
+        id_cand = str(o.get("id") or "").strip()
+        oid = raw_id_cand if (raw_id_cand and is_valid_uuid(raw_id_cand)) else (id_cand or raw_id_cand)
+        if oid:
+            # Strip dashes so UUID "a3f1e7b2-..." → "a3f1e7b2..." → first 6 → "A3F1E7"
+            clean_hex = oid.replace("-", "").replace("GB-", "").replace("gb-", "").strip()
+            disp = f"GB-{clean_hex[:6].upper()}" if len(clean_hex) >= 6 else f"GB-{clean_hex.upper()}"
+            o["order_number"] = disp
+            o["orderNumber"] = disp
+            o["display_id"] = disp
+            o["displayId"] = disp
 
     # Enrich customer_name and customer_phone if missing or generic ('Customer', 'guest', '+919999900000')
     curr_cname = str(o.get("customer_name") or o.get("customerName") or o.get("name") or "").strip()
@@ -753,6 +762,23 @@ WORKFLOW_STATUS_MAP = {
     "DELIVERED": "delivered",
 }
 TERMINAL_ORDER_STATUSES = {"delivered", "cancelled", "failed_delivery", "returned"}
+ORDER_STATUS_RANKS = {
+    "pending": 1,
+    "placed": 1,
+    "confirmed": 2,
+    "preparing": 3,
+    "packing": 3,
+    "ready_for_pickup": 4,
+    "ready": 4,
+    "accepted": 4,
+    "picked_up": 5,
+    "delivering": 5,
+    "out_for_delivery": 5,
+    "delivered": 6,
+    "cancelled": 7,
+    "failed_delivery": 7,
+    "returned": 7,
+}
 
 def rider_payout_amount(order: dict) -> int:
     total = float(order.get("total_amount") or order.get("total") or 0)
@@ -1748,6 +1774,12 @@ async def get_user_orders(
                                         ro["customer_phone"] = item_info["customer_phone"]
                                     if item_info.get("customer_name"):
                                         ro["customer_name"] = item_info["customer_name"]
+                                    if item_info.get("display_id") or item_info.get("order_number"):
+                                        disp_val = item_info.get("display_id") or item_info.get("order_number")
+                                        ro["display_id"] = disp_val
+                                        ro["order_number"] = disp_val
+                                        ro["displayId"] = disp_val
+                                        ro["orderNumber"] = disp_val
                                 db_orders.append(ro)
                 except Exception:
                     pass
@@ -2017,11 +2049,22 @@ async def orders(
             existing_ord = seen_map[match_key]
             curr_st = str(existing_ord.get("status") or "").lower()
             new_st = str(order_dict.get("status") or "").lower()
-            if new_st in TERMINAL_ORDER_STATUSES and curr_st not in TERMINAL_ORDER_STATUSES:
+            curr_rank = ORDER_STATUS_RANKS.get(curr_st, 0)
+            new_rank = ORDER_STATUS_RANKS.get(new_st, 0)
+
+            # Monotonic progression: always prefer advanced order status over stale/prior status
+            if new_rank > curr_rank or (new_st in TERMINAL_ORDER_STATUSES and curr_st not in TERMINAL_ORDER_STATUSES):
                 existing_ord["status"] = new_st
                 if new_st == "delivered":
                     existing_ord["delivered_at"] = order_dict.get("delivered_at") or datetime.now(timezone.utc).isoformat()
                     existing_ord["completedAtISO"] = order_dict.get("completedAtISO") or existing_ord.get("delivered_at")
+
+            if order_dict.get("delivery_agent_id") and not existing_ord.get("delivery_agent_id"):
+                existing_ord["delivery_agent_id"] = order_dict["delivery_agent_id"]
+            if order_dict.get("rider_name") and not existing_ord.get("rider_name"):
+                existing_ord["rider_name"] = order_dict["rider_name"]
+            if order_dict.get("rider_phone") and not existing_ord.get("rider_phone"):
+                existing_ord["rider_phone"] = order_dict["rider_phone"]
             continue
 
         if not order_dict.get("items") or len(order_dict.get("items") or []) == 0:
@@ -2985,15 +3028,16 @@ async def order_status(
         with orders_items_lock:
             o_map = load_orders_items()
             clean_oid = str(order_id).strip()
-            for k in [clean_oid, clean_oid.replace("GB-", "").replace("gb-", "")]:
-                if k in o_map and isinstance(o_map[k], dict):
-                    o_map[k]["status"] = target_status
-                    if target_status == "delivered":
-                        o_map[k]["delivered_at"] = now_utc_iso
-                    if "order" in o_map[k] and isinstance(o_map[k]["order"], dict):
-                        o_map[k]["order"]["status"] = target_status
+            for k, v in list(o_map.items()):
+                if is_same_order_id(k, clean_oid) or (isinstance(v, dict) and (is_same_order_id(v.get("id"), clean_oid) or is_same_order_id(v.get("rawId"), clean_oid) or is_same_order_id(v.get("order_number"), clean_oid) or is_same_order_id(v.get("orderNumber"), clean_oid))):
+                    if isinstance(v, dict):
+                        v["status"] = target_status
                         if target_status == "delivered":
-                            o_map[k]["order"]["delivered_at"] = now_utc_iso
+                            v["delivered_at"] = now_utc_iso
+                        if "order" in v and isinstance(v["order"], dict):
+                            v["order"]["status"] = target_status
+                            if target_status == "delivered":
+                                v["order"]["delivered_at"] = now_utc_iso
             save_orders_items_db(o_map)
     except Exception as err:
         logger.warning(f"Synchronous orders_items.json status update failed for {order_id}: {err}")
@@ -7617,6 +7661,15 @@ async def _orders_sse_generator(request: Request, authorization: str | None):
             logging.warning(f"SSE orders_generator error: {err}")
             yield {"event": "error", "data": json.dumps({"error": str(err)})}
         await asyncio.sleep(3)
+
+@router.get("/orders/stream")
+@router.get("/orders/stream/")
+async def orders_sse_stream(request: Request, authorization: str | None = Header(default=None), token: str | None = Query(default=None)):
+    """Server-Sent Events stream for real-time seller & admin order updates. Works on Vercel serverless."""
+    auth = authorization or (f"Bearer {token}" if token else None)
+    if EventSourceResponse is None:
+        return await orders(phone=None, authorization=auth)
+    return EventSourceResponse(_orders_sse_generator(request, auth))
 
 async def _delivery_sse_generator(request: Request, user):
     """Generator that pushes rider-specific active order updates every 3s via SSE."""

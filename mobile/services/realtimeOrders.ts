@@ -12,7 +12,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Platform } from 'react-native';
-import { get, getApiBaseUrl, invalidateOrdersCache } from './api';
+import { get, getApiBaseUrl, invalidateOrdersCache, getAuthToken } from './api';
 
 export type RealtimeRole = 'seller' | 'rider' | 'admin';
 
@@ -66,6 +66,7 @@ export function useRealtimeOrders(role: RealtimeRole): UseRealtimeOrdersResult {
   const retryCountRef = useRef(0);
   const retryTimerRef = useRef<any>(null);
   const initialFetchDoneRef = useRef(false);
+  const isLiveRef = useRef(false);
 
   const isWeb = Platform.OS === 'web' && typeof EventSource !== 'undefined';
 
@@ -100,22 +101,24 @@ export function useRealtimeOrders(role: RealtimeRole): UseRealtimeOrdersResult {
       if (!mountedRef.current) return;
       setError(e?.message || 'Failed to fetch orders');
     } finally {
-      if (mountedRef.current && isInitial) {
+      if (mountedRef.current) {
         setLoading(false);
       }
     }
   }, [role]);
 
-  const connectSSE = useCallback(() => {
+  const connectSSE = useCallback(async () => {
     if (!isWeb) return;
     if (esRef.current) {
       esRef.current.close();
     }
 
-    const baseUrl = getApiBaseUrl();
-    const sseUrl = `${baseUrl}${getSseEndpoint(role)}`;
-
     try {
+      const baseUrl = getApiBaseUrl();
+      const token = await getAuthToken().catch(() => null);
+      const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+      const sseUrl = `${baseUrl}${getSseEndpoint(role)}${tokenParam}`;
+
       const es = new (window as any).EventSource(sseUrl, { withCredentials: false });
       esRef.current = es;
 
@@ -134,6 +137,7 @@ export function useRealtimeOrders(role: RealtimeRole): UseRealtimeOrdersResult {
             setLoading(false);
             setError(null);
             setIsLive(true);
+            isLiveRef.current = true;
             retryCountRef.current = 0;
           }
         } catch {
@@ -144,6 +148,7 @@ export function useRealtimeOrders(role: RealtimeRole): UseRealtimeOrdersResult {
       es.addEventListener('heartbeat', () => {
         if (mountedRef.current) {
           setIsLive(true);
+          isLiveRef.current = true;
           setLoading(false);
         }
       });
@@ -151,6 +156,10 @@ export function useRealtimeOrders(role: RealtimeRole): UseRealtimeOrdersResult {
       es.addEventListener('error', () => {
         if (!mountedRef.current) return;
         setIsLive(false);
+        isLiveRef.current = false;
+        // Never stay stuck in infinite loading spinner on SSE failure
+        setLoading(false);
+
         if (esRef.current) {
           esRef.current.close();
           esRef.current = null;
@@ -165,6 +174,7 @@ export function useRealtimeOrders(role: RealtimeRole): UseRealtimeOrdersResult {
     } catch {
       if (mountedRef.current) {
         setIsLive(false);
+        isLiveRef.current = false;
         setLoading(false);
       }
     }
@@ -176,6 +186,22 @@ export function useRealtimeOrders(role: RealtimeRole): UseRealtimeOrdersResult {
     if (isWeb) {
       fetchOrders(true);
       connectSSE();
+      // Web fallback polling: if SSE is disconnected, poll every 5s silently without spinner
+      const interval = setInterval(() => {
+        if (!isLiveRef.current && mountedRef.current) {
+          fetchOrders(false);
+        }
+      }, 5000);
+
+      return () => {
+        mountedRef.current = false;
+        clearInterval(interval);
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+        if (esRef.current) {
+          esRef.current.close();
+          esRef.current = null;
+        }
+      };
     } else {
       fetchOrders(true);
       const interval = setInterval(() => {
@@ -187,15 +213,6 @@ export function useRealtimeOrders(role: RealtimeRole): UseRealtimeOrdersResult {
         clearInterval(interval);
       };
     }
-
-    return () => {
-      mountedRef.current = false;
-      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-      if (esRef.current) {
-        esRef.current.close();
-        esRef.current = null;
-      }
-    };
   }, [isWeb, fetchOrders, connectSSE]);
 
   const refresh = useCallback(() => {

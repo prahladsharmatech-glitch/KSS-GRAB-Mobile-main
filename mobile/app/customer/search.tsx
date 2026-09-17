@@ -29,9 +29,15 @@ export default function SearchResultsScreen() {
   const fetchSearchResults = useCallback(async () => {
     if (!query.trim()) {
       setResults([]);
+      setIsLoading(false);
       return;
     }
-    setIsLoading(true);
+    // Only show full loading spinner on initial query if results are empty to avoid typing flicker
+    setResults((prev) => {
+      if (prev.length === 0) setIsLoading(true);
+      return prev;
+    });
+
     try {
       const finalResults = await searchSynchronizedProducts(query);
       const sorted = [...finalResults].sort((a, b) => {
@@ -67,7 +73,16 @@ export default function SearchResultsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
+        <Pressable
+          style={styles.backBtn}
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/customer');
+            }
+          }}
+        >
           <ArrowLeft size={20} color={COLORS.text} />
         </Pressable>
 

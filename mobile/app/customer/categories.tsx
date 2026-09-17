@@ -84,7 +84,16 @@ export default function CategoriesPage() {
 
       {/* ── 2. BACK BUTTON & GLOBAL SEARCH BAR ── */}
       <View style={[styles.searchHeaderRow, { zIndex: 9999 }]}>
-        <Pressable style={styles.backBtnCircle} onPress={() => router.back()}>
+        <Pressable
+          style={styles.backBtnCircle}
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/customer');
+            }
+          }}
+        >
           <ArrowLeft size={18} color="#1E293B" />
         </Pressable>
 

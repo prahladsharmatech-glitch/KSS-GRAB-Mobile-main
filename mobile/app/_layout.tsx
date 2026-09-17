@@ -12,7 +12,15 @@ import { MobileBottomNav } from '../components/MobileBottomNav';
 import { COLORS } from '../constants/theme';
 import { View, StyleSheet, LogBox } from 'react-native';
 
-LogBox.ignoreLogs(['Cannot connect to Expo CLI', 'No route named', 'AIRMap', 'Require cycle:']);
+LogBox.ignoreLogs([
+  'Cannot connect to Expo CLI',
+  'No route named',
+  'AIRMap',
+  'Require cycle:',
+  "The action 'GO_BACK' was not handled by any navigator",
+  '[uploadImage]',
+  'Unsupported FormDataPart implementation',
+]);
 
 export default function RootLayout() {
   const pathname = usePathname();

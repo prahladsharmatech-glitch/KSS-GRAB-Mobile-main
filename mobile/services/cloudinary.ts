@@ -104,6 +104,16 @@ export const getCloudinaryUrl = (path?: string | null, transformation: ImageTran
     return DEFAULT_FALLBACK_IMAGE;
   }
 
+  // Preserve local device URIs, content URIs, data URLs, and blobs as-is
+  if (
+    clean.startsWith('file:') ||
+    clean.startsWith('content:') ||
+    clean.startsWith('data:') ||
+    clean.startsWith('blob:')
+  ) {
+    return clean;
+  }
+
   const filename = clean.split('/').pop()?.split('?')[0] || '';
   if (ASSET_FILENAME_MAP[filename]) {
     return ASSET_FILENAME_MAP[filename];
@@ -160,6 +170,16 @@ export const getValidImage = (img?: any, fallback: string = DEFAULT_FALLBACK_IMA
     return fallback;
   }
 
+  // Preserve local device URIs, content URIs, data URLs, and blobs as-is
+  if (
+    clean.startsWith('file:') ||
+    clean.startsWith('content:') ||
+    clean.startsWith('data:') ||
+    clean.startsWith('blob:')
+  ) {
+    return clean;
+  }
+
   const filename = clean.split('/').pop()?.split('?')[0] || '';
   if (ASSET_FILENAME_MAP[filename]) {
     return ASSET_FILENAME_MAP[filename];
@@ -185,6 +205,16 @@ export const optimizeImageUrl = (url: string, width: number = 300): string => {
     clean.endsWith('/undefined')
   ) {
     return DEFAULT_FALLBACK_IMAGE;
+  }
+
+  // Preserve local device URIs, content URIs, data URLs, and blobs as-is
+  if (
+    clean.startsWith('file:') ||
+    clean.startsWith('content:') ||
+    clean.startsWith('data:') ||
+    clean.startsWith('blob:')
+  ) {
+    return clean;
   }
 
   const filename = clean.split('/').pop()?.split('?')[0] || '';

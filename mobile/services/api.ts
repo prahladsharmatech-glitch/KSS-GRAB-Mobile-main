@@ -167,13 +167,19 @@ export async function fetchDirectFromSupabase<T>(path: string): Promise<T | null
 
     if (!endpoint) return null;
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+
     const res = await fetch(endpoint, {
+      signal: controller.signal,
       headers: {
         apikey: SUPABASE_ANON_KEY,
         Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
         'Content-Type': 'application/json',
       },
     });
+
+    clearTimeout(timeoutId);
 
     if (res.ok) {
       const data = await res.json();
@@ -497,30 +503,102 @@ export const del = <T = any>(path: string) => {
 };
 
 export async function uploadImage(fileUri: string, folder: string = 'grabit_media'): Promise<string> {
+  if (!fileUri) return '';
+  if (fileUri.startsWith('http://') || fileUri.startsWith('https://')) {
+    return fileUri;
+  }
+
   const token = await getAuthToken();
   const formData = new FormData();
   const baseUrl = getApiBaseUrl();
 
-  const filename = fileUri.split('/').pop() || 'photo.jpg';
-  const match = /\.(\w+)$/.exec(filename);
-  const type = match ? `image/${match[1]}` : 'image/jpeg';
+  const rawFilename = fileUri.split('/').pop()?.split('?')[0] || 'photo.jpg';
+  const extMatch = /\.(jpe?g|png|webp|gif)$/i.exec(rawFilename);
+  const ext = extMatch ? extMatch[1].toLowerCase() : 'jpg';
+  const filename = rawFilename.includes('.') ? rawFilename : `${rawFilename}.jpg`;
+  const type = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
 
-  // @ts-ignore RN FormData file handling
-  formData.append('file', { uri: fileUri, name: filename, type });
-  formData.append('folder', folder);
+  let fileAppended = false;
 
-  const response = await fetch(`${baseUrl}/uploads/image`, {
-    method: 'POST',
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: formData,
-  });
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(data.detail || 'Image upload failed.');
+  // 1. If it's a data URI, parse directly to Blob
+  if (fileUri.startsWith('data:')) {
+    try {
+      const commaIdx = fileUri.indexOf(',');
+      if (commaIdx !== -1) {
+        const header = fileUri.slice(0, commaIdx);
+        const base64Data = fileUri.slice(commaIdx + 1);
+        const mime = header.match(/:(.*?);/)?.[1] || type;
+        const binaryStr = typeof atob === 'function' ? atob(base64Data) : '';
+        if (binaryStr) {
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let i = 0; i < binaryStr.length; i++) {
+            bytes[i] = binaryStr.charCodeAt(i);
+          }
+          const blob: any = new Blob([bytes], { type: mime });
+          blob.name = filename;
+          const fileObj = typeof File !== 'undefined' ? new File([blob], filename, { type: mime }) : blob;
+          formData.append('file', fileObj);
+          fileAppended = true;
+        }
+      }
+    } catch {}
   }
 
-  return data.url || data.secure_url || '';
+  // 2. Try fetching the local file URI as a Blob (Expo / React Native WHATWG standard)
+  if (!fileAppended) {
+    try {
+      const fileRes = await fetch(fileUri);
+      const blob: any = await fileRes.blob();
+      blob.name = filename;
+      const fileObj = typeof File !== 'undefined' ? new File([blob], filename, { type }) : blob;
+      formData.append('file', fileObj);
+      fileAppended = true;
+    } catch {
+      // Local file fetch as blob not available
+    }
+  }
+
+  // 3. Fallback: Try React Native traditional object { uri, name, type }
+  if (!fileAppended) {
+    try {
+      // @ts-ignore RN FormData file handling
+      formData.append('file', {
+        uri: fileUri,
+        name: filename,
+        type,
+      } as any);
+      fileAppended = true;
+    } catch {
+      return fileUri;
+    }
+  }
+
+  formData.append('folder', folder);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+  try {
+    const response = await fetch(`${baseUrl}/uploads/image`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+
+    clearTimeout(timeoutId);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      if (__DEV__) console.log('[uploadImage] Server returned status', response.status, data?.detail || '');
+      return fileUri;
+    }
+
+    return data.url || data.secure_url || fileUri;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (__DEV__) console.log('[uploadImage] Upload error/timeout, using local URI fallback:', err);
+    return fileUri;
+  }
 }

@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import logging
 import jwt
-from fastapi import HTTPException, Header
+from fastapi import HTTPException, Header, Query
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -39,10 +39,15 @@ def create_token(profile: dict) -> str:
     return jwt.encode(claims, secret, algorithm="HS256")
 
 
-def current_user(authorization: str | None = Header(default=None)) -> dict:
-    if not authorization or not authorization.startswith("Bearer "):
+def current_user(authorization: str | None = Header(default=None), token: str | None = Query(default=None)) -> dict:
+    raw_token = None
+    if authorization and authorization.startswith("Bearer "):
+        raw_token = authorization[7:].strip()
+    elif token:
+        raw_token = token.strip()
+
+    if not raw_token:
         raise HTTPException(401, "Authentication required")
-    raw_token = authorization[7:].strip()
 
     # Demo tokens — only accepted in debug/development mode
     if raw_token in _DEMO_TOKENS:

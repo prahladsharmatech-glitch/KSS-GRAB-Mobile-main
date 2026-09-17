@@ -18,7 +18,7 @@ import { post } from '../../services/api';
 import { DeliveryLocationMapPicker } from '../../components/DeliveryLocationMapPicker';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import { getCloudinaryUrl, getValidImage, optimizeImageUrl, DEFAULT_FALLBACK_IMAGE } from '../../services/cloudinary';
-import { formatDisplayOrderId } from '../../utils/orderUtils';
+import { formatDisplayOrderId, generateOrderUuid } from '../../utils/orderUtils';
 import { getItem, setItem } from '../../services/storage';
 import { addUserNotification } from '../../utils/userNotifications';
 import {
@@ -386,9 +386,7 @@ export default function CheckoutPage() {
     const activePaymentMethod = (selectedPayment || 'upi').toUpperCase();
     console.timeEnd('Payment');
 
-    const rawId = (typeof crypto !== 'undefined' && (crypto as any).randomUUID) 
-      ? (crypto as any).randomUUID() 
-      : `${Date.now().toString(16).padStart(8, '0')}-0000-4000-8000-${Math.floor(Math.random() * 1e12).toString(16).padStart(12, '0')}`;
+    const rawId = generateOrderUuid();
     const orderNumber = formatDisplayOrderId(rawId);
     const orderItems = cart.map((item) => ({
       id: item.product.id,
@@ -533,7 +531,7 @@ export default function CheckoutPage() {
 
       if (apiRes && (apiRes.id || apiRes.rawId)) {
         const serverId = apiRes.id || apiRes.rawId;
-        const serverDispId = apiRes.display_id || apiRes.order_number || apiRes.displayId || apiRes.orderNumber || orderNum;
+        const serverDispId = orderNum || apiRes.display_id || apiRes.order_number || apiRes.displayId || apiRes.orderNumber;
 
         finalOrder.id = serverId;
         finalOrder.rawId = serverId;

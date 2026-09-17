@@ -8,6 +8,26 @@ import { getValidImage } from './cloudinary';
 export const SELLER_PRODUCTS_KEY = 'grabit_seller_products';
 export const SELLER_CATEGORIES_KEY = 'grabit_seller_categories';
 
+// In-memory catalog cache with 30s TTL to eliminate redundant network & disk waterfalls
+let cachedSyncedProducts: Product[] | null = null;
+let lastProductsFetchTime = 0;
+let inFlightProductsPromise: Promise<Product[]> | null = null;
+
+let cachedSyncedCategories: Category[] | null = null;
+let lastCategoriesFetchTime = 0;
+let inFlightCategoriesPromise: Promise<Category[]> | null = null;
+
+const CATALOG_CACHE_TTL = 30000; // 30s
+
+export function invalidateCatalogMemoryCache() {
+  cachedSyncedProducts = null;
+  lastProductsFetchTime = 0;
+  inFlightProductsPromise = null;
+  cachedSyncedCategories = null;
+  lastCategoriesFetchTime = 0;
+  inFlightCategoriesPromise = null;
+}
+
 // Event emitter for real-time cross-screen synchronization
 type CatalogListener = () => void;
 const catalogListeners = new Set<CatalogListener>();
@@ -20,6 +40,7 @@ export function onCatalogUpdate(listener: CatalogListener): () => void {
 }
 
 export function notifyCatalogUpdated() {
+  invalidateCatalogMemoryCache();
   clearApiCache();
   catalogListeners.forEach((fn) => {
     try {
@@ -144,84 +165,102 @@ export const BASE_SUBCATEGORY_MAP: Record<string, Array<{ name: string; icon: st
 // ==============================================================================
 
 export async function getSynchronizedProducts(categoryFilter?: string): Promise<Product[]> {
-  try {
-    const [storedSellerProducts, cloudProducts] = await Promise.all([
-      getItem<Product[]>(SELLER_PRODUCTS_KEY).catch(() => null),
-      get<any[]>('/products').catch(() => null),
-    ]);
+  const now = Date.now();
+  let allProducts: Product[];
 
-    const productMap = new Map<string, Product>();
+  if (cachedSyncedProducts && now - lastProductsFetchTime < CATALOG_CACHE_TTL) {
+    allProducts = cachedSyncedProducts;
+  } else if (inFlightProductsPromise) {
+    allProducts = await inFlightProductsPromise;
+  } else {
+    inFlightProductsPromise = (async () => {
+      try {
+        const [storedSellerProducts, cloudProducts] = await Promise.all([
+          getItem<Product[]>(SELLER_PRODUCTS_KEY).catch(() => null),
+          get<any[]>('/products').catch(() => null),
+        ]);
 
-    // 1. Base default catalog as foundation
-    for (const p of defaultProducts) {
-      productMap.set(String(p.id), {
-        ...p,
-        id: String(p.id),
-      });
-    }
+        const productMap = new Map<string, Product>();
 
-    // 2. Cloud DB products
-    if (Array.isArray(cloudProducts) && cloudProducts.length > 0) {
-      for (const p of cloudProducts) {
-        const rawCatName =
-          (typeof p.categories === 'object' && p.categories?.name)
-            ? p.categories.name
-            : (Array.isArray(p.categories) && p.categories[0]?.name)
-            ? p.categories[0].name
-            : p.category || p.category_slug || p.name || '';
+        // 1. Base default catalog as foundation
+        for (const p of defaultProducts) {
+          productMap.set(String(p.id), {
+            ...p,
+            id: String(p.id),
+          });
+        }
 
-        const stockVal = p.stock !== undefined ? parseInt(p.stock, 10) : (p.stockCount ?? 20);
-        const inStockVal = p.in_stock !== undefined ? Boolean(p.in_stock) : (p.inStock ?? stockVal > 0);
+        // 2. Cloud DB products
+        if (Array.isArray(cloudProducts) && cloudProducts.length > 0) {
+          for (const p of cloudProducts) {
+            const rawCatName =
+              (typeof p.categories === 'object' && p.categories?.name)
+                ? p.categories.name
+                : (Array.isArray(p.categories) && p.categories[0]?.name)
+                ? p.categories[0].name
+                : p.category || p.category_slug || p.name || '';
 
-        productMap.set(String(p.id), {
-          id: String(p.id),
-          name: p.name || 'Product',
-          price: Number(p.price || 0),
-          originalPrice: p.mrp ? Number(p.mrp) : (p.originalPrice ? Number(p.originalPrice) : Math.round((p.price || 0) * 1.25)),
-          mrp: p.mrp ? Number(p.mrp) : undefined,
-          discountPercent: p.discountPercent || p.discount_percent || 15,
-          weight: p.unit || p.weight || '1 unit',
-          image: getValidImage(p.image_url || p.image),
-          category: p.category_id || p.category || getCanonicalSlug(rawCatName),
-          subcategory: p.subcategory || p.subCategory,
-          brand: p.brand || 'Grabit',
-          description: p.description || '',
-          rating: p.rating || 4.8,
-          reviewCount: p.reviewCount || p.reviews_count || 120,
-          deliveryTimeMinutes: p.deliveryTimeMinutes || 10,
-          stockCount: isNaN(stockVal) ? 20 : stockVal,
-          inStock: inStockVal,
-        });
+            const stockVal = p.stock !== undefined ? parseInt(p.stock, 10) : (p.stockCount ?? 20);
+            const inStockVal = p.in_stock !== undefined ? Boolean(p.in_stock) : (p.inStock ?? stockVal > 0);
+
+            productMap.set(String(p.id), {
+              id: String(p.id),
+              name: p.name || 'Product',
+              price: Number(p.price || 0),
+              originalPrice: p.mrp ? Number(p.mrp) : (p.originalPrice ? Number(p.originalPrice) : Math.round((p.price || 0) * 1.25)),
+              mrp: p.mrp ? Number(p.mrp) : undefined,
+              discountPercent: p.discountPercent || p.discount_percent || 15,
+              weight: p.unit || p.weight || '1 unit',
+              image: getValidImage(p.image_url || p.image),
+              category: p.category_id || p.category || getCanonicalSlug(rawCatName),
+              subcategory: p.subcategory || p.subCategory,
+              brand: p.brand || 'Grabit',
+              description: p.description || '',
+              rating: p.rating || 4.8,
+              reviewCount: p.reviewCount || p.reviews_count || 120,
+              deliveryTimeMinutes: p.deliveryTimeMinutes || 10,
+              stockCount: isNaN(stockVal) ? 20 : stockVal,
+              inStock: inStockVal,
+            });
+          }
+        }
+
+        // 3. Seller-created / seller-edited products (highest priority)
+        if (Array.isArray(storedSellerProducts) && storedSellerProducts.length > 0) {
+          for (const sp of storedSellerProducts) {
+            productMap.set(String(sp.id), {
+              ...sp,
+              id: String(sp.id),
+              image: getValidImage(sp.image),
+            });
+          }
+        }
+
+        const freshList = Array.from(productMap.values());
+        cachedSyncedProducts = freshList;
+        lastProductsFetchTime = Date.now();
+        return freshList;
+      } catch (err) {
+        console.warn('[Catalog] getSynchronizedProducts error:', err);
+        return (cachedSyncedProducts || defaultProducts) as Product[];
+      } finally {
+        inFlightProductsPromise = null;
       }
-    }
+    })();
 
-    // 3. Seller-created / seller-edited products (highest priority)
-    if (Array.isArray(storedSellerProducts) && storedSellerProducts.length > 0) {
-      for (const sp of storedSellerProducts) {
-        productMap.set(String(sp.id), {
-          ...sp,
-          id: String(sp.id),
-          image: getValidImage(sp.image),
-        });
-      }
-    }
-
-    let allProducts = Array.from(productMap.values());
-
-    if (categoryFilter && categoryFilter !== 'all') {
-      const targetSlug = getCanonicalSlug(categoryFilter).toLowerCase();
-      allProducts = allProducts.filter((p) => {
-        const pCat = String(p.category || '').toLowerCase();
-        const pCanonical = getCanonicalSlug(pCat).toLowerCase();
-        return pCanonical === targetSlug || pCat === targetSlug || pCat === categoryFilter.toLowerCase();
-      });
-    }
-
-    return allProducts;
-  } catch (err) {
-    console.warn('[Catalog] getSynchronizedProducts error:', err);
-    return defaultProducts as Product[];
+    allProducts = await inFlightProductsPromise;
   }
+
+  if (categoryFilter && categoryFilter !== 'all') {
+    const targetSlug = getCanonicalSlug(categoryFilter).toLowerCase();
+    return allProducts.filter((p) => {
+      const pCat = String(p.category || '').toLowerCase();
+      const pCanonical = getCanonicalSlug(pCat).toLowerCase();
+      return pCanonical === targetSlug || pCat === targetSlug || pCat === categoryFilter.toLowerCase();
+    });
+  }
+
+  return allProducts;
 }
 
 export async function getProductById(id: string): Promise<Product | undefined> {
@@ -353,101 +392,117 @@ export async function updateProductStock(productId: string, stockCount: number, 
 // ==============================================================================
 
 export async function getSynchronizedCategories(): Promise<Category[]> {
-  try {
-    const [storedSellerCats, cloudCats, allProducts] = await Promise.all([
-      getItem<Category[]>(SELLER_CATEGORIES_KEY).catch(() => null),
-      get<any[]>('/categories').catch(() => null),
-      getSynchronizedProducts().catch(() => defaultProducts as Product[]),
-    ]);
+  const now = Date.now();
+  if (cachedSyncedCategories && now - lastCategoriesFetchTime < CATALOG_CACHE_TTL) {
+    return cachedSyncedCategories;
+  }
+  if (inFlightCategoriesPromise) {
+    return inFlightCategoriesPromise;
+  }
 
-    // Product count cross-referencing
-    const prodCountsByCat = new Map<string, number>();
-    for (const p of allProducts) {
-      const cId = String(p.category || '').toLowerCase();
-      const slug = getCanonicalSlug(cId);
-      if (cId) prodCountsByCat.set(cId, (prodCountsByCat.get(cId) || 0) + 1);
-      if (slug) prodCountsByCat.set(slug, (prodCountsByCat.get(slug) || 0) + 1);
-    }
+  inFlightCategoriesPromise = (async () => {
+    try {
+      const [storedSellerCats, cloudCats, allProducts] = await Promise.all([
+        getItem<Category[]>(SELLER_CATEGORIES_KEY).catch(() => null),
+        get<any[]>('/categories').catch(() => null),
+        getSynchronizedProducts().catch(() => defaultProducts as Product[]),
+      ]);
 
-    const catMap = new Map<string, Category>();
+      // Product count cross-referencing
+      const prodCountsByCat = new Map<string, number>();
+      for (const p of allProducts) {
+        const cId = String(p.category || '').toLowerCase();
+        const slug = getCanonicalSlug(cId);
+        if (cId) prodCountsByCat.set(cId, (prodCountsByCat.get(cId) || 0) + 1);
+        if (slug) prodCountsByCat.set(slug, (prodCountsByCat.get(slug) || 0) + 1);
+      }
 
-    // 1. Base default categories (all 24)
-    for (const def of defaultCategories) {
-      const slug = def.slug || getCanonicalSlug(def.name);
-      const catId = String(def.id);
-      const count = prodCountsByCat.get(catId) || prodCountsByCat.get(slug) || prodCountsByCat.get(def.name.toLowerCase()) || def.itemCount || 12;
-      catMap.set(slug.toLowerCase(), {
-        id: catId,
-        name: def.name,
-        slug,
-        icon: def.icon || '📦',
-        image: def.image ? getValidImage(def.image) : undefined,
-        itemCount: count,
-        level: 'root',
-        parent_id: null,
-        is_active: true,
-      });
-    }
+      const catMap = new Map<string, Category>();
 
-    // 2. Cloud categories
-    if (Array.isArray(cloudCats) && cloudCats.length > 0) {
-      for (const cc of cloudCats) {
-        const name = cc.name || 'Category';
-        const slug = cc.slug || getCanonicalSlug(name);
-        const catId = String(cc.id || slug);
-        const rawImg = (cc.image_url && cc.image_url.trim()) || (cc.image && cc.image.trim()) || '';
-        const count = prodCountsByCat.get(catId) || prodCountsByCat.get(slug) || prodCountsByCat.get(name.toLowerCase()) || 0;
-
-        const existing = catMap.get(slug.toLowerCase());
+      // 1. Base default categories (all 24)
+      for (const def of defaultCategories) {
+        const slug = def.slug || getCanonicalSlug(def.name);
+        const catId = String(def.id);
+        const count = prodCountsByCat.get(catId) || prodCountsByCat.get(slug) || prodCountsByCat.get(def.name.toLowerCase()) || def.itemCount || 12;
         catMap.set(slug.toLowerCase(), {
           id: catId,
-          name,
+          name: def.name,
           slug,
-          icon: cc.icon || existing?.icon || '📦',
-          image: rawImg ? getValidImage(rawImg) : existing?.image,
-          itemCount: count || existing?.itemCount || 0,
-          level: cc.level || existing?.level || 'root',
-          parent_id: cc.parent_id || existing?.parent_id || null,
-          is_active: cc.is_active ?? existing?.is_active ?? true,
-        });
-      }
-    }
-
-    // 3. Stored seller categories (highest priority)
-    if (Array.isArray(storedSellerCats) && storedSellerCats.length > 0) {
-      for (const sc of storedSellerCats) {
-        const slug = sc.slug || getCanonicalSlug(sc.name);
-        const catId = String(sc.id || slug);
-        const count = prodCountsByCat.get(catId) || prodCountsByCat.get(slug) || prodCountsByCat.get(sc.name.toLowerCase()) || sc.itemCount || 0;
-        const key = slug.toLowerCase();
-
-        catMap.set(key, {
-          ...sc,
-          id: catId,
-          name: sc.name,
-          slug,
-          icon: sc.icon || '📦',
-          image: sc.image ? getValidImage(sc.image) : (sc.image_url ? getValidImage(sc.image_url) : undefined),
+          icon: def.icon || '📦',
+          image: def.image ? getValidImage(def.image) : undefined,
           itemCount: count,
-          level: sc.level || 'root',
-          parent_id: sc.parent_id || null,
-          is_active: sc.is_active ?? true,
+          level: 'root',
+          parent_id: null,
+          is_active: true,
         });
       }
-    }
 
-    // Return all root categories
-    const all = Array.from(catMap.values()).filter((c) => c.level === 'root' || !c.parent_id);
-    return all;
-  } catch (err) {
-    console.warn('[Catalog] getSynchronizedCategories error:', err);
-    return defaultCategories.map((c) => ({
-      ...c,
-      id: String(c.id),
-      level: 'root',
-      is_active: true,
-    }));
-  }
+      // 2. Cloud categories
+      if (Array.isArray(cloudCats) && cloudCats.length > 0) {
+        for (const cc of cloudCats) {
+          const name = cc.name || 'Category';
+          const slug = cc.slug || getCanonicalSlug(name);
+          const catId = String(cc.id || slug);
+          const rawImg = (cc.image_url && cc.image_url.trim()) || (cc.image && cc.image.trim()) || '';
+          const count = prodCountsByCat.get(catId) || prodCountsByCat.get(slug) || prodCountsByCat.get(name.toLowerCase()) || 0;
+
+          const existing = catMap.get(slug.toLowerCase());
+          catMap.set(slug.toLowerCase(), {
+            id: catId,
+            name,
+            slug,
+            icon: cc.icon || existing?.icon || '📦',
+            image: rawImg ? getValidImage(rawImg) : existing?.image,
+            itemCount: count || existing?.itemCount || 0,
+            level: cc.level || existing?.level || 'root',
+            parent_id: cc.parent_id || existing?.parent_id || null,
+            is_active: cc.is_active ?? existing?.is_active ?? true,
+          });
+        }
+      }
+
+      // 3. Stored seller categories (highest priority)
+      if (Array.isArray(storedSellerCats) && storedSellerCats.length > 0) {
+        for (const sc of storedSellerCats) {
+          const slug = sc.slug || getCanonicalSlug(sc.name);
+          const catId = String(sc.id || slug);
+          const count = prodCountsByCat.get(catId) || prodCountsByCat.get(slug) || prodCountsByCat.get(sc.name.toLowerCase()) || sc.itemCount || 0;
+          const key = slug.toLowerCase();
+
+          catMap.set(key, {
+            ...sc,
+            id: catId,
+            name: sc.name,
+            slug,
+            icon: sc.icon || '📦',
+            image: sc.image ? getValidImage(sc.image) : (sc.image_url ? getValidImage(sc.image_url) : undefined),
+            itemCount: count,
+            level: sc.level || 'root',
+            parent_id: sc.parent_id || null,
+            is_active: sc.is_active ?? true,
+          });
+        }
+      }
+
+      // Return all root categories
+      const all = Array.from(catMap.values()).filter((c) => c.level === 'root' || !c.parent_id);
+      cachedSyncedCategories = all;
+      lastCategoriesFetchTime = Date.now();
+      return all;
+    } catch (err) {
+      console.warn('[Catalog] getSynchronizedCategories error:', err);
+      return (cachedSyncedCategories || defaultCategories.map((c) => ({
+        ...c,
+        id: String(c.id),
+        level: 'root',
+        is_active: true,
+      }))) as Category[];
+    } finally {
+      inFlightCategoriesPromise = null;
+    }
+  })();
+
+  return inFlightCategoriesPromise;
 }
 
 export async function getAllStoredSellerCategories(): Promise<Category[]> {
@@ -515,8 +570,8 @@ export async function saveCategory(category: Partial<Category>): Promise<Categor
     name,
     slug,
     icon: category.icon || '📦',
-    image: category.image ? getValidImage(category.image) : undefined,
-    image_url: category.image ? getValidImage(category.image) : undefined,
+    image: category.image ? getValidImage(category.image) : (category.image === '' ? '' : undefined),
+    image_url: category.image ? getValidImage(category.image) : (category.image === '' ? '' : undefined),
     level: category.level || 'root',
     parent_id: category.parent_id || null,
     parent_name: category.parent_name,
@@ -538,11 +593,16 @@ export async function saveCategory(category: Partial<Category>): Promise<Categor
     itemCount: def.itemCount || 12,
   }));
 
-  const existingIndex = baseList.findIndex((c) => String(c.id) === id || c.slug === slug);
+  const existingIndex = baseList.findIndex((c) => String(c.id) === id || (slug && c.slug === slug));
   let updated: Category[];
   if (existingIndex >= 0) {
     updated = [...baseList];
-    updated[existingIndex] = { ...updated[existingIndex], ...fullCategory };
+    updated[existingIndex] = {
+      ...updated[existingIndex],
+      ...fullCategory,
+      image: fullCategory.image !== undefined ? fullCategory.image : updated[existingIndex].image,
+      image_url: fullCategory.image_url !== undefined ? fullCategory.image_url : updated[existingIndex].image_url,
+    };
   } else {
     updated = [fullCategory, ...baseList];
   }

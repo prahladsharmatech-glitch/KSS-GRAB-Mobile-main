@@ -11,7 +11,8 @@ import {
   FlatList,
   Image,
 } from 'react-native';
-import { get, post, patch, del } from '../../services/api';
+import { get, post, patch, del, uploadImage } from '../../services/api';
+import * as ImagePicker from 'expo-image-picker';
 import { useToast } from '../../context/ToastContext';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import {
@@ -26,6 +27,11 @@ import {
   Tag,
   X,
   ArrowLeft,
+  Camera,
+  UploadCloud,
+  Folder,
+  Layers,
+  Check,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { categories as defaultCategories, getCanonicalSlug } from '../../data/categories';
@@ -45,6 +51,7 @@ interface SellerCategory {
   slug: string;
   icon?: string;
   image?: string;
+  description?: string;
   level?: 'root' | 'subcategory' | 'item_type';
   parent_id?: string | null;
   parent_name?: string;
@@ -254,14 +261,39 @@ export default function SellerCategoriesScreen() {
   const [deleteModalCat, setDeleteModalCat] = useState<SellerCategory | null>(null);
 
   // Form inputs
+  const [classification, setClassification] = useState<'main' | 'sub'>('main');
   const [formName, setFormName] = useState('');
   const [formSlug, setFormSlug] = useState('');
   const [formIcon, setFormIcon] = useState('📦');
   const [formImage, setFormImage] = useState('');
+  const [formInitialSubCat, setFormInitialSubCat] = useState('');
+  const [formDescription, setFormDescription] = useState('');
+  const [isUploadingImage, setIsUploadingImage] = useState<boolean>(false);
   const [formLevel, setFormLevel] = useState<'root' | 'subcategory' | 'item_type'>('root');
   const [formParentId, setFormParentId] = useState<string>('');
   const [formIsActive, setFormIsActive] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  const handlePickImage = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (perm.granted) {
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          quality: 0.8,
+          allowsEditing: true,
+          aspect: [4, 3],
+        });
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+          setFormImage(result.assets[0].uri);
+        }
+      } else {
+        showToast('Photo gallery permission is required to add an image', 'error');
+      }
+    } catch {
+      showToast('Could not open image picker', 'error');
+    }
+  };
 
   // Live cloud categories fetch with product count cross-referencing and fallback
   const fetchCategoriesLive = useCallback(async () => {
@@ -323,6 +355,7 @@ export default function SellerCategoriesScreen() {
             ...sc,
             id: catId,
             name: sc.name || existing?.name || 'Category',
+            image: sc.image !== undefined ? sc.image : existing?.image,
             slug,
             product_count: pCount,
             is_active: sc.is_active ?? existing?.is_active ?? true,
@@ -363,10 +396,13 @@ export default function SellerCategoriesScreen() {
 
   const openAddModal = () => {
     setEditingCategory(null);
+    setClassification('main');
     setFormName('');
     setFormSlug('');
     setFormIcon('📦');
     setFormImage('');
+    setFormInitialSubCat('');
+    setFormDescription('');
     setFormLevel('root');
     setFormParentId('');
     setFormIsActive(true);
@@ -375,11 +411,15 @@ export default function SellerCategoriesScreen() {
 
   const openEditModal = (cat: SellerCategory) => {
     setEditingCategory(cat);
+    const isSub = cat.level === 'subcategory' || !!cat.parent_id;
+    setClassification(isSub ? 'sub' : 'main');
     setFormName(cat.name);
     setFormSlug(cat.slug);
-    setFormIcon(cat.icon || '📦');
+    setFormIcon(cat.icon || (isSub ? '📁' : '📦'));
     setFormImage(cat.image || '');
-    setFormLevel(cat.level || 'root');
+    setFormInitialSubCat('');
+    setFormDescription(cat.description || '');
+    setFormLevel(cat.level || (isSub ? 'subcategory' : 'root'));
     setFormParentId(cat.parent_id || '');
     setFormIsActive(cat.is_active);
     setIsModalVisible(true);
@@ -387,22 +427,48 @@ export default function SellerCategoriesScreen() {
 
   const handleSaveCategory = async () => {
     if (!formName.trim()) {
-      showToast('Category name is required', 'error');
+      showToast(classification === 'sub' ? 'Sub-category name is required' : 'Category name is required', 'error');
       return;
     }
 
+    if (classification === 'sub' && !formParentId) {
+      if (rootCategories.length > 0) {
+        setFormParentId(rootCategories[0].id);
+      } else {
+        showToast('Please select a parent main category', 'error');
+        return;
+      }
+    }
+
     setIsSubmitting(true);
+    let finalImageUrl = formImage.trim();
+    if (finalImageUrl && (finalImageUrl.startsWith('file:') || finalImageUrl.startsWith('content:'))) {
+      try {
+        setIsUploadingImage(true);
+        const uploaded = await uploadImage(finalImageUrl, 'categories');
+        if (uploaded) {
+          finalImageUrl = uploaded;
+        }
+      } catch (e) {
+        // Fallback to local image URI if offline or upload fails
+      } finally {
+        setIsUploadingImage(false);
+      }
+    }
+
+    const effectiveParentId = classification === 'sub' ? (formParentId || (rootCategories[0]?.id || null)) : null;
     const slug = formSlug.trim() || formName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    const parentCat = formParentId ? categoryList.find((c) => c.id === formParentId) : undefined;
+    const parentCat = effectiveParentId ? categoryList.find((c) => c.id === effectiveParentId) : undefined;
 
     const payload: SellerCategory = {
       id: editingCategory ? editingCategory.id : 'cat-' + Date.now(),
       name: formName.trim(),
       slug,
-      icon: formIcon,
-      image: formImage.trim() ? getValidImage(formImage.trim()) : undefined,
-      level: formLevel,
-      parent_id: formParentId || null,
+      icon: formIcon || (classification === 'sub' ? '📁' : '📦'),
+      image: finalImageUrl ? getValidImage(finalImageUrl) : '',
+      description: formDescription.trim() || undefined,
+      level: classification === 'sub' ? 'subcategory' : 'root',
+      parent_id: effectiveParentId,
       parent_name: parentCat?.name,
       is_active: formIsActive,
       product_count: editingCategory?.product_count || 0,
@@ -410,13 +476,47 @@ export default function SellerCategoriesScreen() {
 
     let updatedList: SellerCategory[];
     if (editingCategory) {
-      updatedList = categoryList.map((c) => (c.id === editingCategory.id ? { ...c, ...payload } : c));
+      updatedList = categoryList.map((c) =>
+        String(c.id) === String(editingCategory.id) || (c.slug && c.slug === editingCategory.slug)
+          ? { ...c, ...payload, image: payload.image }
+          : c
+      );
       setCategoryList(updatedList);
-      showToast(`Category "${formName}" updated!`, 'success');
+      showToast(
+        classification === 'sub'
+          ? `Sub-category "${formName}" updated!`
+          : `Category "${formName}" updated!`,
+        'success'
+      );
     } else {
       updatedList = [payload, ...categoryList];
+
+      // If creating a main category and user supplied an initial sub-category, auto-create it!
+      if (classification === 'main' && formInitialSubCat.trim()) {
+        const subName = formInitialSubCat.trim();
+        const subSlug = subName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        const subPayload: SellerCategory = {
+          id: 'cat-' + (Date.now() + 1),
+          name: subName,
+          slug: subSlug,
+          icon: '📁',
+          level: 'subcategory',
+          parent_id: payload.id,
+          parent_name: payload.name,
+          is_active: true,
+          product_count: 0,
+        };
+        updatedList = [subPayload, ...updatedList];
+        syncSaveCategory(subPayload).catch(() => {});
+      }
+
       setCategoryList(updatedList);
-      showToast(`Category "${formName}" created!`, 'success');
+      showToast(
+        classification === 'sub'
+          ? `Sub-category "${formName}" created!`
+          : `Category "${formName}" created!`,
+        'success'
+      );
     }
     await setItem('grabit_seller_categories', updatedList).catch(() => {});
     setIsModalVisible(false);
@@ -477,13 +577,7 @@ export default function SellerCategoriesScreen() {
         <View style={styles.headerTitleRow}>
           <Pressable
             style={styles.backBtnCircle}
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.replace('/seller' as any);
-              }
-            }}
+            onPress={() => router.replace('/seller')}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <ArrowLeft size={18} color="#0F172A" />
@@ -580,7 +674,7 @@ export default function SellerCategoriesScreen() {
                   {/* Category Image with Overlaid Active Status Badge */}
                   <View style={styles.catImageBox}>
                     {item.image ? (
-                      <Image source={{ uri: item.image }} style={styles.gridCatImage} resizeMode="cover" />
+                      <Image source={{ uri: getValidImage(item.image) }} style={styles.gridCatImage} resizeMode="cover" />
                     ) : (
                       <View style={styles.fallbackIconBox}>
                         <Text style={{ fontSize: 32 }}>{item.icon || '📦'}</Text>
@@ -674,7 +768,7 @@ export default function SellerCategoriesScreen() {
               <View key={root.id} style={[styles.treeCard, isEditingRoot && styles.treeCardEditing]}>
                 <Pressable style={styles.treeHeader} onPress={() => openEditModal(root)}>
                   {root.image ? (
-                    <Image source={{ uri: root.image }} style={styles.treeThumb} resizeMode="cover" />
+                    <Image source={{ uri: getValidImage(root.image) }} style={styles.treeThumb} resizeMode="cover" />
                   ) : (
                     <Text style={styles.iconEmoji}>{root.icon || '📦'}</Text>
                   )}
@@ -700,7 +794,7 @@ export default function SellerCategoriesScreen() {
                         >
                           <ChevronRight size={14} color={COLORS.textSecondary} style={{ marginRight: 6 }} />
                           {sub.image ? (
-                            <Image source={{ uri: sub.image }} style={styles.subThumb} resizeMode="cover" />
+                            <Image source={{ uri: getValidImage(sub.image) }} style={styles.subThumb} resizeMode="cover" />
                           ) : (
                             <Text style={styles.subEmoji}>{sub.icon || '📁'}</Text>
                           )}
@@ -740,78 +834,186 @@ export default function SellerCategoriesScreen() {
             </View>
 
             <ScrollView contentContainerStyle={styles.modalForm} showsVerticalScrollIndicator={false}>
-              <Text style={styles.inputLabel}>Category Name *</Text>
+              {/* Category Classification */}
+              <Text style={styles.inputLabel}>Category Classification</Text>
+              <View style={styles.classificationContainer}>
+                <Pressable
+                  style={[
+                    styles.classificationBtn,
+                    classification === 'main' && styles.classificationBtnActive,
+                  ]}
+                  onPress={() => {
+                    setClassification('main');
+                    setFormLevel('root');
+                  }}
+                >
+                  <Folder
+                    size={17}
+                    color={classification === 'main' ? COLORS.primary : COLORS.textSecondary}
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text
+                    style={[
+                      styles.classificationBtnText,
+                      classification === 'main' && styles.classificationBtnTextActive,
+                    ]}
+                  >
+                    Main Category
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.classificationBtn,
+                    classification === 'sub' && styles.classificationBtnActive,
+                  ]}
+                  onPress={() => {
+                    setClassification('sub');
+                    setFormLevel('subcategory');
+                    if (!formParentId && rootCategories.length > 0) {
+                      setFormParentId(rootCategories[0].id);
+                    }
+                  }}
+                >
+                  <Layers
+                    size={17}
+                    color={classification === 'sub' ? COLORS.primary : COLORS.textSecondary}
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text
+                    style={[
+                      styles.classificationBtnText,
+                      classification === 'sub' && styles.classificationBtnTextActive,
+                    ]}
+                  >
+                    Sub Category
+                  </Text>
+                </Pressable>
+              </View>
+
+              {/* If Sub Category: Select Parent Main Category */}
+              {classification === 'sub' ? (
+                <View style={{ marginTop: 10, marginBottom: 4 }}>
+                  <Text style={styles.inputLabel}>Select Main Category *</Text>
+                  <Text style={styles.helperText}>Choose the main category this sub-category belongs under</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 6 }}>
+                    {rootCategories.map((rCat) => {
+                      const isSelected = formParentId === rCat.id;
+                      return (
+                        <Pressable
+                          key={rCat.id}
+                          style={[
+                            styles.parentChip,
+                            isSelected && styles.parentChipActive,
+                          ]}
+                          onPress={() => setFormParentId(rCat.id)}
+                        >
+                          <Text style={{ fontSize: 14, marginRight: 6 }}>{rCat.icon || '📁'}</Text>
+                          <Text
+                            style={[
+                              styles.parentChipText,
+                              isSelected && styles.parentChipTextActive,
+                            ]}
+                          >
+                            {rCat.name}
+                          </Text>
+                          {isSelected ? (
+                            <Check size={13} color={COLORS.primary} style={{ marginLeft: 4 }} />
+                          ) : null}
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              ) : null}
+
+              {/* Category Name */}
+              <Text style={styles.inputLabel}>
+                {classification === 'sub' ? 'Sub Category Name *' : 'Category Name *'}
+              </Text>
               <TextInput
                 style={styles.input}
-                placeholder="e.g. Fresh Fruits & Veggies"
+                placeholder={classification === 'sub' ? 'e.g. Milk & Cream, Exotic Fruits' : 'e.g. Fresh Fruits & Veggies'}
+                placeholderTextColor={COLORS.textMuted}
                 value={formName}
                 onChangeText={setFormName}
               />
 
+              {/* Slug Identifier */}
               <Text style={styles.inputLabel}>Slug Identifier</Text>
               <TextInput
                 style={styles.input}
-                placeholder="e.g. fresh-produce"
+                placeholder={classification === 'sub' ? 'e.g. milk-cream' : 'e.g. fresh-produce'}
+                placeholderTextColor={COLORS.textMuted}
                 value={formSlug}
                 onChangeText={setFormSlug}
               />
 
+              {/* Category Emoji Icon */}
               <Text style={styles.inputLabel}>Category Emoji Icon</Text>
               <TextInput
                 style={styles.input}
-                placeholder="e.g. 🍎"
+                placeholder={classification === 'sub' ? 'e.g. 🥛' : 'e.g. 🍎'}
+                placeholderTextColor={COLORS.textMuted}
                 value={formIcon}
                 onChangeText={setFormIcon}
               />
 
-              <Text style={styles.inputLabel}>Category Image URL (Customer Portal Match)</Text>
+              {/* If Main Category: Sub Category (Optional) */}
+              {classification === 'main' && !editingCategory ? (
+                <View style={{ marginTop: 6 }}>
+                  <Text style={styles.inputLabel}>Sub Category (Optional)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. Milk & Cream, Exotic Fruits, Cold Drinks"
+                    placeholderTextColor={COLORS.textMuted}
+                    value={formInitialSubCat}
+                    onChangeText={setFormInitialSubCat}
+                  />
+                  <Text style={styles.helperText}>
+                    Optionally create an initial sub-category nested directly inside this category.
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* Description (Optional) */}
+              <Text style={styles.inputLabel}>Description (Optional)</Text>
               <TextInput
-                style={styles.input}
-                placeholder="e.g. https://images.unsplash.com/..."
-                value={formImage}
-                onChangeText={setFormImage}
+                style={styles.textAreaInput}
+                placeholder="Short summary of items included under this category..."
+                placeholderTextColor={COLORS.textMuted}
+                multiline
+                numberOfLines={3}
+                value={formDescription}
+                onChangeText={setFormDescription}
               />
 
-              <Text style={styles.inputLabel}>Taxonomy Level</Text>
-              <View style={styles.levelRow}>
-                {(['root', 'subcategory', 'item_type'] as const).map((lvl) => (
-                  <Pressable
-                    key={lvl}
-                    style={[styles.levelBtn, formLevel === lvl && styles.levelBtnActive]}
-                    onPress={() => setFormLevel(lvl)}
-                  >
-                    <Text style={[styles.levelBtnText, formLevel === lvl && styles.levelBtnTextActive]}>
-                      {lvl === 'root' ? 'Root' : lvl === 'subcategory' ? 'Subcat' : 'Item Type'}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              {formLevel !== 'root' ? (
-                <>
-                  <Text style={styles.inputLabel}>Parent Category</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                    {rootCategories.map((rCat) => (
-                      <Pressable
-                        key={rCat.id}
-                        style={[
-                          styles.parentChip,
-                          formParentId === rCat.id && styles.parentChipActive,
-                        ]}
-                        onPress={() => setFormParentId(rCat.id)}
-                      >
-                        <Text
-                          style={[
-                            styles.parentChipText,
-                            formParentId === rCat.id && styles.parentChipTextActive,
-                          ]}
-                        >
-                          {rCat.icon} {rCat.name}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-                </>
+              {/* Category Image (Optional) */}
+              <Text style={styles.inputLabel}>Category Image (Optional)</Text>
+              <Pressable style={styles.imagePickerBox} onPress={handlePickImage}>
+                {formImage ? (
+                  <View style={styles.previewContainer}>
+                    <Image source={{ uri: getValidImage(formImage) }} style={styles.previewImage} resizeMode="cover" />
+                    <View style={styles.changeImageOverlay}>
+                      <Camera size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+                      <Text style={styles.changeImageText}>Change</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.imagePlaceholder}>
+                    <View style={styles.cameraIconCircle}>
+                      <Camera size={22} color={COLORS.primary} />
+                    </View>
+                    <Text style={styles.imagePickerText}>Upload Image from Device</Text>
+                    <Text style={styles.imagePickerSub}>Tap to select from photo gallery</Text>
+                  </View>
+                )}
+              </Pressable>
+              {formImage ? (
+                <Pressable style={styles.removeImageBtn} onPress={() => setFormImage('')}>
+                  <X size={13} color="#EF4444" style={{ marginRight: 4 }} />
+                  <Text style={styles.removeImageText}>Remove Image</Text>
+                </Pressable>
               ) : null}
 
               <Pressable style={styles.toggleRow} onPress={() => setFormIsActive(!formIsActive)}>
@@ -826,7 +1028,11 @@ export default function SellerCategoriesScreen() {
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
                   <Text style={styles.saveSubmitText}>
-                    {editingCategory ? 'Save Changes' : 'Create Category'}
+                    {editingCategory
+                      ? 'Save Changes'
+                      : classification === 'sub'
+                      ? 'Create Sub-Category'
+                      : 'Create Category'}
                   </Text>
                 )}
               </Pressable>
@@ -1531,5 +1737,129 @@ const styles = StyleSheet.create({
   deleteText: {
     color: '#FFFFFF',
     fontWeight: '800',
+  },
+  imagePickerBox: {
+    height: 125,
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    marginTop: 4,
+  },
+  imagePlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 10,
+  },
+  cameraIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#EFF6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  imagePickerText: {
+    fontSize: 13,
+    color: COLORS.primary,
+    fontWeight: '700',
+  },
+  imagePickerSub: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+  previewContainer: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  changeImageOverlay: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  changeImageText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  removeImageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    marginTop: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  removeImageText: {
+    fontSize: 12,
+    color: '#EF4444',
+    fontWeight: '600',
+  },
+  classificationContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    padding: 4,
+    marginVertical: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  classificationBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 9,
+  },
+  classificationBtnActive: {
+    backgroundColor: '#FFFFFF',
+    ...SHADOWS.sm,
+  },
+  classificationBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  classificationBtnTextActive: {
+    color: COLORS.primary,
+    fontWeight: '800',
+  },
+  helperText: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 4,
+    marginBottom: 8,
+    lineHeight: 16,
+  },
+  textAreaInput: {
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: COLORS.text,
+    minHeight: 70,
+    textAlignVertical: 'top',
   },
 });

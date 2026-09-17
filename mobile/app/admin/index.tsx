@@ -391,7 +391,9 @@ export default function AdminPortalScreen({ initialTab }: { initialTab?: string 
         ...DEFAULT_PARTNERS,
       ]);
       setPartners(combinedPartners);
-      await setItem('grabit_partners', combinedPartners).catch(() => {});
+      if (Array.isArray(savedPartners) ? (savedPartners.length !== combinedPartners.length) : combinedPartners.length > 0) {
+        await setItem('grabit_partners', combinedPartners).catch(() => {});
+      }
 
       if (Array.isArray(productsRes) && productsRes.length > 0) {
         setProducts((prev) => {
@@ -497,7 +499,7 @@ export default function AdminPortalScreen({ initialTab }: { initialTab?: string 
 
   useEffect(() => {
     fetchAllAdminData();
-    const interval = setInterval(fetchAllAdminData, 4000);
+    const interval = setInterval(fetchAllAdminData, 8000);
     const unsubPartners = onPartnersUpdate(() => {
       fetchAllAdminData();
     });

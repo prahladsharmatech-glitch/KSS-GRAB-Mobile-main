@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -106,6 +106,7 @@ export default function ActiveDeliveryScreen() {
   const [sosModal, setSosModal] = useState(false);
   const [otpInput, setOtpInput] = useState('');
   const [items, setItems] = useState<OrderItem[]>([]);
+  const currentOrderIdRef = useRef<string | null>(null);
 
   // Real order data from API
   const [order, setOrder] = useState<any>(null);
@@ -159,6 +160,9 @@ export default function ActiveDeliveryScreen() {
     setOrder(activeFromLive);
     if (activeFromLive) {
       const orderId = activeFromLive.rawId || activeFromLive.id;
+      const isSameOrder = Boolean(orderId && currentOrderIdRef.current === orderId);
+      currentOrderIdRef.current = orderId || null;
+
       if (orderId) {
         getItem<string>(`grabit_rider_step_${orderId}`).then((savedStep) => {
           if (savedStep && ['REACH_STORE', 'STORE_CHECKLIST', 'EN_ROUTE', 'ARRIVED', 'OTP_DELIVERY', 'COMPLETED'].includes(savedStep)) {
@@ -169,7 +173,62 @@ export default function ActiveDeliveryScreen() {
         }).catch(() => {});
       }
       const apiItems = activeFromLive.items || activeFromLive.order_items || [];
-      setItems(buildChecklistItems(apiItems));
+      if (orderId) {
+        getItem<string[]>(`grabit_rider_checklist_${orderId}`).then((savedChecked) => {
+          const persistedSet = new Set(Array.isArray(savedChecked) ? savedChecked.map(String) : []);
+          setItems((prev) => {
+            const fresh = buildChecklistItems(apiItems);
+            return fresh.map((fi) => {
+              const idStr = String(fi.id);
+              const nameStr = String(fi.name).toLowerCase().trim();
+              if (isSameOrder && prev.length > 0) {
+                const prevItem = prev.find(
+                  (p) => String(p.id) === idStr || String(p.name).toLowerCase().trim() === nameStr
+                );
+                if (prevItem !== undefined) {
+                  return { ...fi, checked: prevItem.checked };
+                }
+              }
+              const isChecked = persistedSet.has(idStr) || persistedSet.has(nameStr) || false;
+              return { ...fi, checked: isChecked };
+            });
+          });
+        }).catch(() => {
+          setItems((prev) => {
+            const fresh = buildChecklistItems(apiItems);
+            return fresh.map((fi) => {
+              const idStr = String(fi.id);
+              const nameStr = String(fi.name).toLowerCase().trim();
+              if (isSameOrder && prev.length > 0) {
+                const prevItem = prev.find(
+                  (p) => String(p.id) === idStr || String(p.name).toLowerCase().trim() === nameStr
+                );
+                if (prevItem !== undefined) {
+                  return { ...fi, checked: prevItem.checked };
+                }
+              }
+              return { ...fi, checked: false };
+            });
+          });
+        });
+      } else {
+        setItems((prev) => {
+          const fresh = buildChecklistItems(apiItems);
+          return fresh.map((fi) => {
+            const idStr = String(fi.id);
+            const nameStr = String(fi.name).toLowerCase().trim();
+            if (isSameOrder && prev.length > 0) {
+              const prevItem = prev.find(
+                (p) => String(p.id) === idStr || String(p.name).toLowerCase().trim() === nameStr
+              );
+              if (prevItem !== undefined) {
+                return { ...fi, checked: prevItem.checked };
+              }
+            }
+            return { ...fi, checked: false };
+          });
+        });
+      }
       const total = Number(activeFromLive.total_amount || activeFromLive.total || 0);
       setPayout(Math.max(30, Math.round(total * 0.3)));
     }
@@ -228,18 +287,42 @@ export default function ActiveDeliveryScreen() {
       } else if (nextStep === 'COMPLETED') {
         patch(`/orders/${orderId}/status`, { status: 'delivered' }).catch(() => {});
         syncLocalStatus(order, 'delivered');
+        removeItem(`grabit_rider_checklist_${orderId}`).catch(() => {});
       }
       invalidateOrdersCache();
     }
   };
 
   const toggleCheckItem = (id: string) => {
-    setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, checked: !item.checked } : item))
-    );
+    setItems((prev) => {
+      const next = prev.map((item) => (item.id === id ? { ...item, checked: !item.checked } : item));
+      const activeOrderId = order?.rawId || order?.id || currentOrderIdRef.current;
+      if (activeOrderId) {
+        const checkedIds = next.filter((i) => i.checked).map((i) => String(i.id));
+        setItem(`grabit_rider_checklist_${activeOrderId}`, checkedIds).catch(() => {});
+      }
+      return next;
+    });
   };
 
-  const allItemsChecked = items.every((i) => i.checked);
+  const allItemsChecked = items.length > 0 && items.every((i) => i.checked);
+
+  const handleChecklistAction = () => {
+    if (!allItemsChecked) {
+      setItems((prev) => {
+        const next = prev.map((item) => ({ ...item, checked: true }));
+        const activeOrderId = order?.rawId || order?.id || currentOrderIdRef.current;
+        if (activeOrderId) {
+          const checkedIds = next.map((i) => String(i.id));
+          setItem(`grabit_rider_checklist_${activeOrderId}`, checkedIds).catch(() => {});
+        }
+        return next;
+      });
+      return;
+    }
+    advanceStep('EN_ROUTE');
+    showToast('Items verified! Start navigating to customer.', 'success');
+  };
 
   const handleCaptureProof = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -316,6 +399,7 @@ export default function ActiveDeliveryScreen() {
         await patch(`/orders/${orderId}/status`, { status: 'delivered', ...(riderId ? { delivery_agent_id: riderId } : {}) }).catch(() => {});
         await patch(`/delivery/${orderId}/step`, { step: 'COMPLETED' }).catch(() => {});
         await removeItem(`grabit_rider_step_${orderId}`);
+        await removeItem(`grabit_rider_checklist_${orderId}`).catch(() => {});
         syncLocalStatus(order, 'delivered');
         invalidateOrdersCache();
       }
@@ -831,7 +915,7 @@ export default function ActiveDeliveryScreen() {
             <View style={styles.stepContainer}>
               <View style={styles.checklistHeader}>
                 <Package size={22} color={COLORS.primary} />
-                <Text style={styles.checklistTitle}>Verify Store Items (4 items)</Text>
+                <Text style={styles.checklistTitle}>Verify Store Items ({items.length} items)</Text>
               </View>
 
               <Text style={styles.checklistSub}>
@@ -858,11 +942,7 @@ export default function ActiveDeliveryScreen() {
 
               <Pressable
                 style={[styles.primaryActionBtn, !allItemsChecked && styles.disabledBtn]}
-                disabled={!allItemsChecked}
-                onPress={() => {
-                  advanceStep('EN_ROUTE');
-                  showToast('Items verified! Start navigating to customer.', 'success');
-                }}
+                onPress={handleChecklistAction}
               >
                 <Text style={styles.primaryActionText}>
                   {allItemsChecked ? 'Confirm Items Picked Up' : 'Check All Items First'}

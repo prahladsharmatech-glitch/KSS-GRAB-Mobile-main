@@ -333,9 +333,17 @@ export default function OrdersPage() {
             const formatted = formatOrder(o);
             const key = findMatchingKey(formatted);
             const existing = uniqueMap.get(key);
-            if (existing && existing.items && existing.items.length > 0 && (!formatted.items || formatted.items.length === 0)) {
-              formatted.items = existing.items;
-              formatted.totalItems = existing.totalItems;
+            if (existing) {
+              if (existing.displayId) {
+                formatted.displayId = existing.displayId;
+                formatted.display_id = existing.displayId;
+                formatted.orderNumber = existing.displayId;
+                formatted.order_number = existing.displayId;
+              }
+              if (existing.items && existing.items.length > 0 && (!formatted.items || formatted.items.length === 0)) {
+                formatted.items = existing.items;
+                formatted.totalItems = existing.totalItems;
+              }
             }
             uniqueMap.set(key, formatted);
           }
@@ -366,9 +374,18 @@ export default function OrdersPage() {
             ? o.status
             : existing.status;
           const bestStep = o.status === 'cancelled' ? -1 : Math.max(exStep, oStep);
+          // Preserve the original display ID and canonical IDs shown to the customer!
+          const persistentDisplayId = existing.displayId || existing.orderNumber || o.displayId || o.orderNumber || formatDisplayOrderId(existing);
+          const canonicalId = existing.rawId || existing.id || o.rawId || o.id;
           deduplicatedList[dupIndex] = {
             ...existing,
             ...o,
+            id: canonicalId,
+            rawId: canonicalId,
+            displayId: persistentDisplayId,
+            display_id: persistentDisplayId,
+            orderNumber: persistentDisplayId,
+            order_number: persistentDisplayId,
             status: bestStatus,
             trackerStep: bestStep,
             items: (o.items && o.items.length > 0) ? o.items : existing.items,
