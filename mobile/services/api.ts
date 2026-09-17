@@ -139,8 +139,12 @@ export async function fetchDirectFromSupabase<T>(path: string): Promise<T | null
       }
     } else if (route === 'categories' || route === 'categories/') {
       endpoint = `${SUPABASE_REST_URL}/categories?select=*&order=name`;
+    } else if (route === 'delivery/riders' || route === 'delivery/riders/' || route === 'riders' || route === 'riders/') {
+      endpoint = `${SUPABASE_REST_URL}/profiles?role=in.(delivery_agent,rider,delivery,delivery_partner)&order=created_at.desc`;
+    } else if (route === 'admin/partners' || route === 'admin/partners/' || route === 'users' || route === 'users/') {
+      endpoint = `${SUPABASE_REST_URL}/profiles?select=*&order=created_at.desc`;
     } else if (route === 'orders' || route === 'orders/' || route === 'store/orders' || route === 'seller/orders' || route.startsWith('orders/user/') || route.startsWith('delivery/')) {
-      endpoint = `${SUPABASE_REST_URL}/orders?select=*,profiles!orders_customer_id_fkey(id,full_name,phone)&status=in.(delivered,completed)&order=created_at.desc&limit=100`;
+      endpoint = `${SUPABASE_REST_URL}/orders?select=*,profiles!orders_customer_id_fkey(id,full_name,phone)&order=created_at.desc&limit=100`;
     } else if (route === 'seller/profile' || route === 'seller/profile/') {
       return {
         store_name: 'GrabIt SuperMart (Indiranagar)',
@@ -236,6 +240,18 @@ export async function postDirectToSupabase<T>(path: string, payload: any): Promi
       if (payload.customer_id && isUuid(payload.customer_id) && payload.customer_id !== 'b0cf5967-7bf0-4ce0-9d74-220c59bc6798') {
         dbPayload.customer_id = payload.customer_id;
       }
+    } else if (cleanPath === 'profiles' || cleanPath === 'profiles/' || cleanPath === 'users' || cleanPath === 'users/' || cleanPath === 'admin/partners') {
+      endpoint = `${SUPABASE_REST_URL}/profiles`;
+      const candId = payload.id;
+      const profileId = isUuid(candId) ? String(candId).trim() : generateRandomUuid();
+      dbPayload = {
+        id: profileId,
+        phone: payload.phone || null,
+        full_name: payload.full_name || payload.name || 'Partner',
+        email: payload.email || null,
+        role: payload.role || 'delivery_agent',
+        created_at: new Date().toISOString(),
+      };
     }
 
     let res = await fetch(endpoint, {
@@ -373,7 +389,7 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
     if (isStorePath && (!token || token === 'demo-customer-token')) {
       const sellerToken = await getSecureItem('grabit_seller_access').catch(() => null);
       token = sellerToken || 'demo-seller-token';
-    } else if (isDeliveryPath) {
+    } else if (isDeliveryPath && !cleanPath.includes('/delivery/riders')) {
       const riderToken = await getSecureItem('grabit_rider_token').catch(() => null);
       if (riderToken) {
         token = riderToken;

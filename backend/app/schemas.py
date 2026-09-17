@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Literal
 
 class PhoneRequest(BaseModel): phone: str = Field(pattern=r"^\+?[1-9]\d{7,14}$")
-class RegistrationRequest(PhoneRequest): full_name: str = Field(min_length=2, max_length=100); email: str | None = None
+class RegistrationRequest(PhoneRequest): full_name: str = Field(min_length=2, max_length=100, pattern=r"^[A-Za-z]+(?: [A-Za-z]+)*$"); email: str | None = None
 class VerifyOtpRequest(PhoneRequest): otp: str = Field(pattern=r"^\d{6}$"); full_name: str | None = None; email: str | None = None
 class CartSyncRequest(BaseModel): phone: str; items: list
 class CartItemRequest(BaseModel): product_id: str; quantity: int = Field(ge=1, le=50)
@@ -31,18 +31,37 @@ class ProductRequest(BaseModel):
     price: float = Field(gt=0)
     stock: int = Field(default=0, ge=0)
     category_id: str | None = None
+    category: str | None = None
+    category_slug: str | None = None
+    subcategory: str | None = None
     image_url: str | None = None
+    mrp: float | None = None
+    unit: str | None = None
+    weight: str | None = None
+    description: str | None = None
+    in_stock: bool | None = None
 
 class ProductUpdateRequest(BaseModel):
     name: str | None = None
     price: float | None = Field(default=None, gt=0)
     stock: int | None = Field(default=None, ge=0)
     category_id: str | None = None
+    category: str | None = None
+    subcategory: str | None = None
     image_url: str | None = None
+    mrp: float | None = None
+    unit: str | None = None
+    description: str | None = None
+    in_stock: bool | None = None
 
 class CategoryRequest(BaseModel):
     name: str
+    slug: str | None = None
+    icon: str | None = None
     image_url: str | None = None
+    level: str | None = None
+    parent_id: str | None = None
+    is_active: bool | None = None
 
 from enum import Enum
 
@@ -80,7 +99,7 @@ class BulkAssignRequest(BaseModel):
     rider_name: str | None = None
 class ManagedUser(BaseModel): full_name: str; phone: str; role: Literal["seller", "delivery_agent"]
 class ProfileUpdate(BaseModel):
-    full_name: str | None = Field(default=None, min_length=2, max_length=100)
+    full_name: str | None = Field(default=None, min_length=2, max_length=100, pattern=r"^[A-Za-z]+(?: [A-Za-z]+)*$")
     email: str | None = None
     avatar_url: str | None = None
     selfie_image: str | None = None

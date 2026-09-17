@@ -53,6 +53,7 @@ export default function ProfilePage() {
   const [walletBalance, setWalletBalance] = useState<number>(0);
   const [addAmount, setAddAmount] = useState<string>('100');
   const [isSavingProfile, setIsSavingProfile] = useState<boolean>(false);
+  const [profileNameError, setProfileNameError] = useState<string>('');
 
   const rawPhone = (user?.phone || '').replace(/\D/g, '');
   const cleanPhone = rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
@@ -66,10 +67,27 @@ export default function ProfilePage() {
     });
   }, [walletStorageKey]);
 
+  const handleUserNameChange = (text: string) => {
+    const hasInvalid = /[^a-zA-Z\s]/.test(text);
+    const sanitized = text
+      .replace(/[^a-zA-Z\s]/g, '')
+      .replace(/^\s+/, '')
+      .replace(/\s{2,}/g, ' ');
+    setUserName(sanitized);
+    if (hasInvalid) {
+      setProfileNameError('Numbers and special characters are not allowed. Only letters (A–Z, a–z) are accepted.');
+    } else if (sanitized.length > 0 && sanitized.trim().length < 2) {
+      setProfileNameError('Name must be at least 2 characters.');
+    } else {
+      setProfileNameError('');
+    }
+  };
+
   const openEditProfile = () => {
     setUserName(user?.name || (user as any)?.full_name || 'Customer User');
     setUserPhone(user?.phone || '');
     setUserEmail((user as any)?.email || '');
+    setProfileNameError('');
     setActiveModal('edit-profile');
   };
 
@@ -188,15 +206,31 @@ export default function ProfilePage() {
 
   // ── SAVE PROFILE HANDLER ──
   const handleSaveProfile = async () => {
-    if (!userName.trim()) {
+    const trimmed = userName.trim();
+    if (!trimmed) {
       notify('Please enter your full name.');
+      setProfileNameError('Please enter your full name.');
       return;
     }
 
+    const NAME_REGEX = /^[A-Za-z]+(?: [A-Za-z]+)*$/;
+    if (!NAME_REGEX.test(trimmed)) {
+      notify('Name must contain only alphabetic characters (A–Z, a–z). Numbers are not allowed.');
+      setProfileNameError('Numbers and special characters are not allowed. Only letters (A–Z, a–z) are accepted.');
+      return;
+    }
+
+    if (trimmed.length < 2) {
+      notify('Name must be at least 2 characters.');
+      setProfileNameError('Name must be at least 2 characters.');
+      return;
+    }
+
+    setProfileNameError('');
     setIsSavingProfile(true);
     try {
       const payload = {
-        full_name: userName.trim(),
+        full_name: trimmed,
         email: userEmail.trim(),
       };
 
@@ -207,8 +241,8 @@ export default function ProfilePage() {
       }
 
       await updateProfile({
-        name: userName.trim(),
-        full_name: userName.trim(),
+        name: trimmed,
+        full_name: trimmed,
         email: userEmail.trim(),
         phone: userPhone.trim(),
       });
@@ -664,14 +698,36 @@ export default function ProfilePage() {
             </Pressable>
             <Text style={styles.modalTitle}>Edit Account Profile</Text>
 
-            <Text style={styles.inputLabel}>Full Name</Text>
+            <Text style={styles.inputLabel}>
+              Full Name <Text style={{ color: '#EF4444' }}>*</Text>
+            </Text>
             <TextInput
-              style={styles.numericInput}
+              style={[
+                styles.numericInput,
+                !!profileNameError && { borderColor: '#EF4444', backgroundColor: '#FEF2F2' },
+              ]}
               value={userName}
-              onChangeText={setUserName}
-              placeholder="Your Full Name"
+              onChangeText={handleUserNameChange}
+              placeholder="Your Full Name (letters only)"
               placeholderTextColor="#94A3B8"
+              autoCapitalize="words"
+              autoCorrect={false}
+              keyboardType="default"
             />
+            {!!profileNameError && (
+              <Text
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: '700',
+                  color: '#EF4444',
+                  marginTop: -10,
+                  marginBottom: 10,
+                  marginLeft: 2,
+                }}
+              >
+                {profileNameError}
+              </Text>
+            )}
 
             <Text style={styles.inputLabel}>Mobile Number</Text>
             <TextInput

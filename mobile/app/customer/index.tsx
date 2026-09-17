@@ -20,11 +20,13 @@ import { ProductCard } from '../../components/ProductCard';
 import { SearchAutocomplete } from '../../components/SearchAutocomplete';
 import { NotificationModal } from '../../components/NotificationModal';
 import ProductSuggestionModal from '../../components/ProductSuggestionModal';
+import { DeliveryLocationMapPicker } from '../../components/DeliveryLocationMapPicker';
 import { getRealUserNotifications } from '../../utils/userNotifications';
 import { get } from '../../services/api';
 import { Product, Category } from '../../types';
 import { products as localProducts } from '../../data/products';
 import { categories as localCategories, getCanonicalSlug } from '../../data/categories';
+import { getSynchronizedCategories, getSynchronizedProducts, onCatalogUpdate } from '../../services/catalog';
 import { getCloudinaryUrl, getValidImage, optimizeImageUrl, DEFAULT_FALLBACK_IMAGE } from '../../services/cloudinary';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
 import {
@@ -378,6 +380,7 @@ export default function CustomerHomeScreen() {
   const [reviewText, setReviewText] = useState('');
   const [isReviewSubmitted, setIsReviewSubmitted] = useState(false);
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
+  const [locationModalView, setLocationModalView] = useState<'options' | 'map'>('options');
   const lastFetchTimeRef = useRef<number>(0);
 
   useEffect(() => {
@@ -388,96 +391,33 @@ export default function CustomerHomeScreen() {
 
   const fetchHomeData = useCallback(async (isMounted: boolean) => {
     try {
-      const [catsRes, prodsRes] = await Promise.all([
-        get<Category[]>('/categories'),
-        get<any[]>('/products'),
+      const [syncedCats, syncedProds] = await Promise.all([
+        getSynchronizedCategories(),
+        getSynchronizedProducts(),
       ]);
 
       if (!isMounted) return;
       lastFetchTimeRef.current = Date.now();
 
-      if (catsRes && Array.isArray(catsRes) && catsRes.length > 0) {
-        // Build API lookup map using canonical slug and normalized category name
-        const apiCategoryMap = new Map<string, any>();
-        catsRes.forEach((c: any) => {
-          const rawSlug = c.slug || c.id || '';
-          const canonicalKey = getCanonicalSlug(rawSlug);
-          const nameKey = (c.name || '').toLowerCase().trim();
-          if (canonicalKey) apiCategoryMap.set(canonicalKey, c);
-          if (nameKey) apiCategoryMap.set(nameKey, c);
-        });
-
-        // Merge API response into localCategories (all 23 entries), preserving Cloudinary URLs, canonical slugs, icons, and names
-        const mergedCats = localCategories.map((lc) => {
-          const lcCanonical = getCanonicalSlug(lc.slug);
-          const lcNameLower = lc.name.toLowerCase().trim();
-          const apiMatch = apiCategoryMap.get(lcCanonical) || apiCategoryMap.get(lcNameLower);
-
-          if (!apiMatch) return lc;
-
-          const validApiImage =
-            apiMatch.image && typeof apiMatch.image === 'string' && apiMatch.image.trim().length > 0
-              ? apiMatch.image.trim()
-              : apiMatch.image_url && typeof apiMatch.image_url === 'string' && apiMatch.image_url.trim().length > 0
-              ? apiMatch.image_url.trim()
-              : null;
-
-          const validApiIcon =
-            apiMatch.icon && typeof apiMatch.icon === 'string' && apiMatch.icon.trim().length > 0
-              ? apiMatch.icon.trim()
-              : null;
-
-          return {
-            ...lc,
-            ...apiMatch,
-            id: lc.id, // Preserve consistent local ID
-            name: lc.name, // Keep clean display name
-            slug: lcCanonical, // Preserve canonical slug
-            image: validApiImage || lc.image, // Prefer valid API image, otherwise preserve local Cloudinary URL
-            icon: validApiIcon || lc.icon, // Prefer valid API icon, otherwise preserve local icon
-            itemCount: apiMatch.itemCount || apiMatch.item_count || lc.itemCount,
-          };
-        });
-
-        setCategories(mergedCats);
+      if (syncedCats && Array.isArray(syncedCats) && syncedCats.length > 0) {
+        setCategories(syncedCats);
       }
 
-      if (prodsRes && Array.isArray(prodsRes) && prodsRes.length > 0) {
-        const normalized: Product[] = prodsRes.map((p: any) => {
-          const rawCatName =
-            (typeof p.categories === 'object' && p.categories?.name)
-              ? p.categories.name
-              : (Array.isArray(p.categories) && p.categories[0]?.name)
-              ? p.categories[0].name
-              : p.category || p.category_slug || p.name || '';
-
-          return {
-            ...p,
-            id: String(p.id),
-            name: p.name,
-            price: Number(p.price || 0),
-            originalPrice: p.originalPrice || p.original_price || Math.round((p.price || 0) * 1.25),
-            discountPercent: p.discountPercent || p.discount_percent || 15,
-            image: getValidImage(p.image_url || p.image),
-            category: getCanonicalSlug(rawCatName),
-            inStock: p.inStock ?? (p.stock !== undefined ? p.stock > 0 : true),
-            rating: p.rating || 4.8,
-            reviewCount: p.reviewCount || p.reviews_count || 120,
-          };
-        });
-
-        const mergedMap = new Map<string, Product>();
-        localProducts.forEach((lp) => mergedMap.set(String(lp.id), lp));
-        normalized.forEach((np) => mergedMap.set(String(np.id), np));
-
-        const allProds = Array.from(mergedMap.values());
-        const sorted = [...allProds].sort((a, b) => (b.rating || 0) - (a.rating || 0));
+      if (syncedProds && Array.isArray(syncedProds) && syncedProds.length > 0) {
+        const sorted = [...syncedProds].sort((a, b) => (b.rating || 0) - (a.rating || 0));
         setPopularProducts(sorted);
-        const snacks = allProds.filter(p => (p.category || '').toLowerCase().includes('snack') || (p.name || '').toLowerCase().includes('maggi') || (p.name || '').toLowerCase().includes('noodle') || (p.name || '').toLowerCase().includes('chip') || (p.name || '').toLowerCase().includes('lays') || (p.name || '').toLowerCase().includes('dorito'));
+        const snacks = syncedProds.filter(p =>
+          (p.category || '').toLowerCase().includes('snack') ||
+          (p.name || '').toLowerCase().includes('maggi') ||
+          (p.name || '').toLowerCase().includes('noodle') ||
+          (p.name || '').toLowerCase().includes('chip') ||
+          (p.name || '').toLowerCase().includes('lays') ||
+          (p.name || '').toLowerCase().includes('dorito')
+        );
         setSnacksProducts(snacks.length > 0 ? snacks : sorted);
       }
     } catch (error) {
-      if (isMounted) console.log('[Home] API Fetch failed, showing local fallback data');
+      if (isMounted) console.log('[Home] Catalog sync failed, showing local fallback data');
     } finally {
       if (isMounted) setIsInitialLoading(false);
     }
@@ -491,13 +431,20 @@ export default function CustomerHomeScreen() {
     };
   }, [fetchHomeData]);
 
+  // Real-time catalog update listener (seller portal -> customer portal)
+  useEffect(() => {
+    const unsub = onCatalogUpdate(() => {
+      fetchHomeData(true);
+    });
+    return () => {
+      unsub();
+    };
+  }, [fetchHomeData]);
+
   useFocusEffect(
     useCallback(() => {
       let isMounted = true;
-      // Stale cache guard: skip fetching if data was fetched less than 30s ago
-      if (Date.now() - lastFetchTimeRef.current > 30000) {
-        fetchHomeData(isMounted);
-      }
+      fetchHomeData(isMounted);
       return () => {
         isMounted = false;
       };
@@ -538,7 +485,7 @@ export default function CustomerHomeScreen() {
 
   return (
     <View style={styles.flexContainer}>
-      {/* ── 1. EXACT SCREENSHOT 1 TOP HEADER ── */}
+      {/* ── 1. COMPACT TOP HEADER ── */}
       <View style={styles.topHeader}>
         <View style={styles.headerLeftCol}>
           <Pressable onPress={() => router.push('/customer' as any)}>
@@ -549,19 +496,24 @@ export default function CustomerHomeScreen() {
             />
           </Pressable>
 
-          <Pressable style={styles.locationPillRow} onPress={() => setIsLocationModalOpen(true)}>
-            <MapPin size={13} color="#0066FF" style={{ marginRight: 4 }} />
-            <Text style={styles.locationPrefixText}>Pinned Location - </Text>
+          <Pressable
+            style={styles.locationPillRow}
+            onPress={() => {
+              setLocationModalView('options');
+              setIsLocationModalOpen(true);
+            }}
+          >
+            <MapPin size={12} color="#0066FF" style={{ marginRight: 4 }} />
             <Text style={styles.locationText} numberOfLines={1}>
               {currentAddress.street || 'Kalyanagar, Bengaluru'}
             </Text>
-            <ChevronDown size={13} color="#0066FF" style={{ marginLeft: 3 }} />
+            <ChevronDown size={12} color="#0066FF" style={{ marginLeft: 3 }} />
           </Pressable>
         </View>
 
         <View style={styles.headerRightIcons}>
           <Pressable style={styles.iconCircle} onPress={() => setIsNotifModalOpen(true)}>
-            <Bell size={18} color="#0066FF" />
+            <Bell size={16} color="#0066FF" />
             {unreadNotifCount > 0 && (
               <View style={styles.notifBadge}>
                 <Text style={styles.notifBadgeText}>{unreadNotifCount > 9 ? '9+' : unreadNotifCount}</Text>
@@ -570,7 +522,7 @@ export default function CustomerHomeScreen() {
           </Pressable>
 
           <Pressable style={styles.iconCircle} onPress={() => router.push('/customer/cart' as any)}>
-            <ShoppingBag size={18} color="#0066FF" />
+            <ShoppingBag size={16} color="#0066FF" />
             {totalItems > 0 ? (
               <View style={styles.cartBadge}>
                 <Text style={styles.cartBadgeText}>{totalItems}</Text>
@@ -984,7 +936,7 @@ export default function CustomerHomeScreen() {
         </View>
       </ScrollView>
 
-      {/* ── LOCATION SELECTION MODAL MATCHING SCREENSHOT 1:1 ── */}
+      {/* ── COMPACT LOCATION SELECTION MODAL ── */}
       <Modal
         visible={isLocationModalOpen}
         transparent
@@ -998,110 +950,103 @@ export default function CustomerHomeScreen() {
           />
 
           <View style={styles.locModalContent}>
-            {/* Top Close Button */}
-            <Pressable
-              style={styles.locModalCloseBtn}
-              onPress={() => setIsLocationModalOpen(false)}
-            >
-              <X size={16} color="#64748B" />
-            </Pressable>
-
-            {/* Top Icon Badge */}
-            <View style={styles.locModalIconBadge}>
-              <MapPin size={22} color="#0066FF" />
+            {/* Modal Header */}
+            <View style={styles.locModalHeader}>
+              <View style={styles.locModalHeaderLeft}>
+                <MapPin size={17} color="#0066FF" style={{ marginRight: 6 }} />
+                <Text style={styles.locModalTitle}>Delivery Location</Text>
+              </View>
+              <Pressable
+                style={styles.locModalCloseBtn}
+                onPress={() => setIsLocationModalOpen(false)}
+              >
+                <X size={15} color="#64748B" />
+              </Pressable>
             </View>
 
-            {/* Title & Subtitle */}
-            <Text style={styles.locModalTitle}>Select Delivery Location</Text>
-            <Text style={styles.locModalSub}>
-              Add your delivery address to see live stock availability and 10-minute delivery in your area.
-            </Text>
-
-            {/* Button 1: Use Current Location */}
-            <Pressable
-              style={styles.locPrimaryBtn}
-              onPress={async () => {
-                showToast('Fetching current GPS location...', 'info');
-                await fetchCurrentLocation();
-                setIsLocationModalOpen(false);
-              }}
-            >
-              <View style={styles.locBtnIconCol}>
-                <Navigation size={18} color="#FFFFFF" />
-              </View>
-              <View style={styles.locBtnTextCol}>
-                <Text style={styles.locPrimaryBtnTitle}>Use Current Location</Text>
-                <Text style={styles.locPrimaryBtnSub}>Detect device GPS & fetch street address</Text>
-              </View>
-            </Pressable>
-
-            {/* Button 2: Set Address / Pin on Map */}
-            <Pressable
-              style={styles.locSecondaryBtn}
-              onPress={() => {
-                setIsLocationModalOpen(false);
-                router.push('/customer/address-picker' as any);
-              }}
-            >
-              <View style={styles.locBtnIconCol}>
-                <MapPin size={18} color="#0066FF" />
-              </View>
-              <View style={styles.locBtnTextCol}>
-                <Text style={styles.locSecondaryBtnTitle}>Set Address / Pin on Map</Text>
-                <Text style={styles.locSecondaryBtnSub}>Interactive map picker & address search</Text>
-              </View>
-            </Pressable>
-
-            {/* Divider */}
-            <View style={styles.locDividerRow}>
-              <View style={styles.locDividerLine} />
-              <Text style={styles.locDividerText}>OR CHOOSE FROM SAVED ADDRESSES</Text>
-              <View style={styles.locDividerLine} />
-            </View>
-
-            {/* Saved Address Card (Pinned Location) */}
-            <View style={styles.savedAddrCard}>
-              <View style={styles.savedAddrHeader}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <MapPin size={16} color="#0066FF" style={{ marginRight: 6 }} />
-                  <Text style={styles.savedAddrTitle}>Pinned Location</Text>
-                </View>
-                <View style={{ flexDirection: 'row', gap: 6 }}>
+            {locationModalView === 'map' ? (
+              <View style={{ width: '100%', marginTop: 8 }}>
+                <DeliveryLocationMapPicker
+                  initialLat={currentAddress.latitude || 12.9716}
+                  initialLng={currentAddress.longitude || 77.5946}
+                  height={175}
+                  onSelectLocation={(lat, lng) => {
+                    showToast(`Location: ${lat.toFixed(4)}, ${lng.toFixed(4)}`, 'success');
+                  }}
+                />
+                <View style={styles.mapActionRow}>
                   <Pressable
-                    style={styles.editAddrPill}
+                    style={styles.mapBackBtn}
+                    onPress={() => setLocationModalView('options')}
+                  >
+                    <Text style={styles.mapBackBtnText}>Back</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.mapConfirmBtn}
                     onPress={() => {
                       setIsLocationModalOpen(false);
-                      showToast('Opening address edit form...', 'info');
+                      showToast('Location confirmed from map', 'success');
                     }}
                   >
-                    <Edit size={11} color="#0066FF" style={{ marginRight: 3 }} />
-                    <Text style={styles.editAddrText}>Edit</Text>
-                  </Pressable>
-                  <Pressable
-                    style={styles.deleteAddrPill}
-                    onPress={() => showToast('Address deleted', 'info')}
-                  >
-                    <Text style={styles.deleteAddrText}>Delete</Text>
+                    <Text style={styles.mapConfirmBtnText}>Confirm Location</Text>
                   </Pressable>
                 </View>
               </View>
+            ) : (
+              <>
+                <Text style={styles.locModalSub}>
+                  Select your address for 10-minute instant delivery
+                </Text>
 
-              <Text style={styles.savedAddrMainText}>Kalyanagar, Kalyanagar</Text>
-              <Text style={styles.savedAddrExpressBadge}>12-20 min express delivery</Text>
-              <Text style={styles.savedAddrSubText}>Bengaluru 560043, Karnataka 560043</Text>
-            </View>
+                {/* 2 Compact Action Buttons Row */}
+                <View style={styles.locActionRow}>
+                  <Pressable
+                    style={styles.locActionBtnPrimary}
+                    onPress={async () => {
+                      showToast('Detecting current GPS location...', 'info');
+                      await fetchCurrentLocation();
+                      setIsLocationModalOpen(false);
+                    }}
+                  >
+                    <Navigation size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
+                    <Text style={styles.locActionBtnPrimaryText}>Use Current GPS</Text>
+                  </Pressable>
 
-            {/* Bottom Dashed Button: Enter Address Details Manually */}
-            <Pressable
-              style={styles.manualAddrBtn}
-              onPress={() => {
-                setIsLocationModalOpen(false);
-                showToast('Opening manual address form...', 'info');
-              }}
-            >
-              <Plus size={16} color="#0066FF" style={{ marginRight: 6 }} />
-              <Text style={styles.manualAddrBtnText}>Enter Address Details Manually</Text>
-            </Pressable>
+                  <Pressable
+                    style={styles.locActionBtnSecondary}
+                    onPress={() => setLocationModalView('map')}
+                  >
+                    <MapPin size={13} color="#0066FF" style={{ marginRight: 5 }} />
+                    <Text style={styles.locActionBtnSecondaryText}>Pin on Map</Text>
+                  </Pressable>
+                </View>
+
+                {/* Saved Address Card */}
+                <Pressable
+                  style={styles.savedAddrCompactCard}
+                  onPress={() => {
+                    setIsLocationModalOpen(false);
+                    showToast('Location selected', 'success');
+                  }}
+                >
+                  <View style={styles.savedAddrCompactLeft}>
+                    <View style={styles.savedAddrTagRow}>
+                      <MapPin size={12} color="#0066FF" style={{ marginRight: 4 }} />
+                      <Text style={styles.savedAddrTag}>Current Address</Text>
+                      <View style={styles.expressMiniBadge}>
+                        <Text style={styles.expressMiniBadgeText}>⚡ 10-15m</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.savedAddrCompactText} numberOfLines={1}>
+                      {currentAddress.street || 'Kalyanagar, Bengaluru 560043'}
+                    </Text>
+                  </View>
+                  <View style={styles.savedAddrActionPill}>
+                    <Text style={styles.savedAddrActionText}>Selected</Text>
+                  </View>
+                </Pressable>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -1129,52 +1074,55 @@ const styles = StyleSheet.create({
     paddingBottom: 90,
   },
 
-  /* Top Header matching Screenshot 1 */
+  /* Compact Top Header */
   topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#FFFFFF',
     paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.sm,
-    paddingBottom: SPACING.xs,
+    paddingTop: 6,
+    paddingBottom: 6,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: '#F1F5F9',
   },
   headerLeftCol: {
     flex: 1,
     marginRight: 8,
+    justifyContent: 'center',
   },
   brandLogoImg: {
-    width: 110,
-    height: 34,
+    width: 84,
+    height: 24,
     alignSelf: 'flex-start',
     marginBottom: 2,
   },
   locationPillRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 1,
-  },
-  locationPrefixText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#0F172A',
+    alignSelf: 'flex-start',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingVertical: 2.5,
+    paddingHorizontal: 7,
+    borderRadius: 8,
+    maxWidth: '94%',
   },
   locationText: {
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: 11.5,
+    fontWeight: '700',
     color: '#0F172A',
-    maxWidth: 140,
+    flexShrink: 1,
   },
   headerRightIcons: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   iconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -1186,12 +1134,12 @@ const styles = StyleSheet.create({
   },
   notifBadge: {
     position: 'absolute',
-    top: -4,
-    right: -4,
+    top: -3,
+    right: -3,
     backgroundColor: '#0066FF',
     borderRadius: 8,
-    minWidth: 16,
-    height: 16,
+    minWidth: 15,
+    height: 15,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 2,
@@ -1200,17 +1148,17 @@ const styles = StyleSheet.create({
   },
   notifBadgeText: {
     color: '#FFFFFF',
-    fontSize: 9,
+    fontSize: 8.5,
     fontWeight: '900',
   },
   cartBadge: {
     position: 'absolute',
-    top: -4,
-    right: -4,
+    top: -3,
+    right: -3,
     backgroundColor: '#34C759',
     borderRadius: 8,
-    width: 16,
-    height: 16,
+    width: 15,
+    height: 15,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1.5,
@@ -1218,7 +1166,7 @@ const styles = StyleSheet.create({
   },
   cartBadgeText: {
     color: '#FFFFFF',
-    fontSize: 9,
+    fontSize: 8.5,
     fontWeight: '900',
   },
 
@@ -1876,10 +1824,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 
-  /* Location Selection Modal Styles */
+  /* Compact Location Modal Styles */
   locModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: SPACING.md,
@@ -1889,200 +1837,162 @@ const styles = StyleSheet.create({
   },
   locModalContent: {
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 360,
     backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: SPACING.lg,
-    alignItems: 'center',
-    position: 'relative',
+    borderRadius: 20,
+    padding: 16,
     ...SHADOWS.lg,
-    elevation: 12,
+    elevation: 10,
   },
-  locModalCloseBtn: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F1F5F9',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  locModalIconBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#E0F2FE',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-    marginTop: 4,
-  },
-  locModalTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#0F172A',
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  locModalSub: {
-    fontSize: 12,
-    color: '#64748B',
-    textAlign: 'center',
-    lineHeight: 16,
-    marginBottom: 16,
-    paddingHorizontal: 8,
-  },
-  locPrimaryBtn: {
-    width: '100%',
-    backgroundColor: '#0066FF',
-    borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-    ...SHADOWS.sm,
-  },
-  locSecondaryBtn: {
-    width: '100%',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: '#0066FF',
-    borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  locBtnIconCol: {
-    marginRight: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  locBtnTextCol: {
-    flex: 1,
-  },
-  locPrimaryBtnTitle: {
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#FFFFFF',
-  },
-  locPrimaryBtnSub: {
-    fontSize: 10,
-    color: 'rgba(255, 255, 255, 0.9)',
-    marginTop: 1,
-  },
-  locSecondaryBtnTitle: {
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#0066FF',
-  },
-  locSecondaryBtnSub: {
-    fontSize: 10,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  locDividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 14,
-    width: '100%',
-  },
-  locDividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E2E8F0',
-  },
-  locDividerText: {
-    fontSize: 9,
-    fontWeight: '900',
-    color: '#94A3B8',
-    marginHorizontal: 8,
-    letterSpacing: 0.5,
-  },
-  savedAddrCard: {
-    width: '100%',
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1.5,
-    borderColor: '#0066FF',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 14,
-  },
-  savedAddrHeader: {
+  locModalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 6,
   },
-  savedAddrTitle: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#0066FF',
-  },
-  editAddrPill: {
+  locModalHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 10,
   },
-  editAddrText: {
-    fontSize: 10,
+  locModalTitle: {
+    fontSize: 16,
     fontWeight: '800',
-    color: '#0066FF',
-  },
-  deleteAddrPill: {
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-  },
-  deleteAddrText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#EF4444',
-  },
-  savedAddrMainText: {
-    fontSize: 13,
-    fontWeight: '900',
     color: '#0F172A',
-    marginBottom: 2,
   },
-  savedAddrExpressBadge: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#0066FF',
-    marginBottom: 4,
+  locModalCloseBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  savedAddrSubText: {
-    fontSize: 11,
+  locModalSub: {
+    fontSize: 11.5,
     color: '#64748B',
+    lineHeight: 15,
+    marginBottom: 12,
   },
-  manualAddrBtn: {
-    width: '100%',
+  locActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  locActionBtnPrimary: {
+    flex: 1,
+    height: 38,
+    backgroundColor: '#0066FF',
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SHADOWS.sm,
+  },
+  locActionBtnPrimaryText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  locActionBtnSecondary: {
+    flex: 1,
+    height: 38,
     backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: '#BFDBFE',
-    borderStyle: 'dashed',
-    borderRadius: 16,
-    paddingVertical: 13,
+    borderWidth: 1,
+    borderColor: '#0066FF',
+    borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  manualAddrBtnText: {
-    fontSize: 13,
-    fontWeight: '900',
+  locActionBtnSecondaryText: {
     color: '#0066FF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  savedAddrCompactCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 10,
+  },
+  savedAddrCompactLeft: {
+    flex: 1,
+    marginRight: 8,
+  },
+  savedAddrTagRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  savedAddrTag: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginRight: 6,
+  },
+  expressMiniBadge: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  expressMiniBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#0066FF',
+  },
+  savedAddrCompactText: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  savedAddrActionPill: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  savedAddrActionText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#0066FF',
+  },
+  mapActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  mapBackBtn: {
+    flex: 1,
+    height: 36,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mapBackBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  mapConfirmBtn: {
+    flex: 2,
+    height: 36,
+    backgroundColor: '#0066FF',
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mapConfirmBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });

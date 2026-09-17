@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,8 +12,8 @@ import { categories as staticCategories, CategoryItem } from '../../data/categor
 import { useCart } from '../../context/CartContext';
 import { useLocation } from '../../context/LocationContext';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
-import { useRouter } from 'expo-router';
-import { get } from '../../services/api';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { getSynchronizedCategories, onCatalogUpdate } from '../../services/catalog';
 import { getCloudinaryUrl, getValidImage, optimizeImageUrl, DEFAULT_FALLBACK_IMAGE } from '../../services/cloudinary';
 import {
   Search,
@@ -28,6 +28,9 @@ import { CustomerTopHeader } from '../../components/CustomerTopHeader';
 
 const getCatImgSource = (imgStr?: string) => {
   if (!imgStr || typeof imgStr !== 'string') return { uri: DEFAULT_FALLBACK_IMAGE };
+  if (imgStr.startsWith('http://') || imgStr.startsWith('https://')) {
+    return { uri: optimizeImageUrl(imgStr, 300) };
+  }
   const clean = getValidImage(imgStr);
   return { uri: optimizeImageUrl(clean, 300) };
 };
@@ -38,42 +41,37 @@ export default function CategoriesPage() {
   const { currentAddress, fetchCurrentLocation } = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
   const [allCategories, setAllCategories] = useState<CategoryItem[]>(staticCategories);
-  const lastFetchRef = useRef<number>(0);
 
-  useEffect(() => {
-    if (Date.now() - lastFetchRef.current > 30000) {
-      fetchBackendCategories();
+  const loadCategories = useCallback(async () => {
+    try {
+      const cats = await getSynchronizedCategories();
+      if (cats && cats.length > 0) {
+        setAllCategories(cats as CategoryItem[]);
+      }
+    } catch {
+      // Fallback to staticCategories if call fails
     }
   }, []);
 
-  const fetchBackendCategories = async () => {
-    try {
-      const res = await get('/categories');
-      lastFetchRef.current = Date.now();
-      if (res && Array.isArray(res) && res.length > 0) {
-        const mergedMap = new Map<string, CategoryItem>();
-        staticCategories.forEach((cat) => mergedMap.set(cat.name.toLowerCase().trim(), cat));
-        res.forEach((cat: any) => {
-          const key = (cat.name || '').toLowerCase().trim();
-          if (key) {
-            const existing = mergedMap.get(key);
-            const validImg = getValidImage(cat.image_url || cat.image || existing?.image);
-            mergedMap.set(key, {
-              id: cat.id || existing?.id || key,
-              name: cat.name || existing?.name || '',
-              slug: cat.slug || existing?.slug || key.replace(/\s+/g, '-'),
-              icon: cat.icon || existing?.icon || '🛍️',
-              image: validImg,
-              itemCount: cat.itemCount || existing?.itemCount || 20,
-            });
-          }
-        });
-        setAllCategories(Array.from(mergedMap.values()));
-      }
-    } catch {
-      // Fallback to staticCategories if backend call fails
-    }
-  };
+  useEffect(() => {
+    loadCategories();
+  }, [loadCategories]);
+
+  // Real-time catalog update listener
+  useEffect(() => {
+    const unsub = onCatalogUpdate(() => {
+      loadCategories();
+    });
+    return () => {
+      unsub();
+    };
+  }, [loadCategories]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadCategories();
+    }, [loadCategories])
+  );
 
   const filteredCategories = allCategories.filter((c) =>
     c.name.toLowerCase().includes(searchQuery.toLowerCase().trim())

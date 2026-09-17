@@ -10,11 +10,21 @@ import {
   Switch,
   StyleSheet,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { get, post, patch, del, uploadImage } from '../../services/api';
+import { get, post, patch, del, uploadImage, clearApiCache } from '../../services/api';
+import {
+  getSynchronizedProducts,
+  saveProduct,
+  deleteProduct,
+  updateProductStock,
+  onCatalogUpdate,
+  getSynchronizedCategories,
+  getSynchronizedSubcategories,
+} from '../../services/catalog';
 import { getCloudinaryUrl } from '../../services/cloudinary';
-import { Product } from '../../types';
+import { Product, Category } from '../../types';
 import { useToast } from '../../context/ToastContext';
 import { BatchLoadingSkeleton } from '../../components/BatchLoadingSkeleton';
 import { COLORS, SPACING, SHADOWS } from '../../constants/theme';
@@ -35,6 +45,7 @@ export default function SellerProductsScreen() {
   const { showToast } = useToast();
   const [productList, setProductList] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -42,6 +53,12 @@ export default function SellerProductsScreen() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [displayLimit, setDisplayLimit] = useState<number>(20);
   const [isBatchLoading, setIsBatchLoading] = useState<boolean>(false);
+
+  // Categories & Subcategories
+  const [availableCategories, setAvailableCategories] = useState<Category[]>([]);
+  const [availableSubcategories, setAvailableSubcategories] = useState<Array<{ id: string; label: string; name: string }>>([]);
+  const [isFormCategoryPickerOpen, setIsFormCategoryPickerOpen] = useState(false);
+  const [isFormSubcategoryPickerOpen, setIsFormSubcategoryPickerOpen] = useState(false);
 
   // Reset batch limit to 20 whenever filters change for 0ms instant response
   useEffect(() => {
@@ -61,6 +78,7 @@ export default function SellerProductsScreen() {
   const [formPrice, setFormPrice] = useState('');
   const [formOriginalPrice, setFormOriginalPrice] = useState('');
   const [formCategory, setFormCategory] = useState('produce');
+  const [formSubcategory, setFormSubcategory] = useState('');
   const [formWeight, setFormWeight] = useState('1 unit');
   const [formStockCount, setFormStockCount] = useState('25');
   const [formInStock, setFormInStock] = useState(true);
@@ -68,32 +86,15 @@ export default function SellerProductsScreen() {
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Live cloud products sync
+  // Live cloud + local products and categories sync
   const fetchProductsLive = useCallback(async () => {
     try {
-      const res = await get('/products');
-      if (res && Array.isArray(res)) {
-        const formatted: Product[] = res.map((p: any, idx: number) => {
-          const rawImage = p.image_url || p.image || 'https://res.cloudinary.com/hmx3azp6/image/upload/v1787645100/grabit_media/lays_magic_masala.png';
-          const stockVal = p.stock !== undefined ? parseInt(p.stock, 10) : (p.stockCount ?? 20);
-          const inStockVal = p.in_stock !== undefined ? Boolean(p.in_stock) : (p.inStock ?? stockVal > 0);
-
-          return {
-            ...p,
-            id: String(p.id || 'prod-' + idx),
-            name: p.name || 'Unnamed Product',
-            price: Number(p.price || 0),
-            originalPrice: p.mrp ? Number(p.mrp) : (p.originalPrice ? Number(p.originalPrice) : undefined),
-            weight: p.unit || p.weight || '1 unit',
-            image: rawImage,
-            category: p.category_id || p.category || 'produce',
-            stockCount: isNaN(stockVal) ? 20 : stockVal,
-            inStock: inStockVal,
-            description: p.description || '',
-          };
-        });
-        setProductList(formatted);
-      }
+      const [prods, cats] = await Promise.all([
+        getSynchronizedProducts(),
+        getSynchronizedCategories(),
+      ]);
+      setProductList(prods);
+      setAvailableCategories(cats);
     } catch {
       // Retain list
     } finally {
@@ -105,12 +106,42 @@ export default function SellerProductsScreen() {
     fetchProductsLive();
   }, [fetchProductsLive]);
 
+  // Listen for real-time catalog changes
+  useEffect(() => {
+    const unsub = onCatalogUpdate(() => {
+      fetchProductsLive();
+    });
+    return unsub;
+  }, [fetchProductsLive]);
+
+  // Update subcategories when form category changes
+  useEffect(() => {
+    if (formCategory) {
+      getSynchronizedSubcategories(formCategory).then((subs) => {
+        setAvailableSubcategories(subs.filter((s) => s.id !== 'All'));
+      });
+    } else {
+      setAvailableSubcategories([]);
+    }
+  }, [formCategory]);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      clearApiCache();
+      await fetchProductsLive();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [fetchProductsLive]);
+
   const openAddModal = () => {
     setEditingProduct(null);
     setFormName('');
     setFormPrice('');
     setFormOriginalPrice('');
-    setFormCategory('produce');
+    setFormCategory(availableCategories.length > 0 ? availableCategories[0].slug : 'produce');
+    setFormSubcategory('');
     setFormWeight('1 unit');
     setFormStockCount('25');
     setFormInStock(true);
@@ -125,6 +156,7 @@ export default function SellerProductsScreen() {
     setFormPrice(String(prod.price));
     setFormOriginalPrice(prod.originalPrice ? String(prod.originalPrice) : '');
     setFormCategory(prod.category || 'produce');
+    setFormSubcategory(prod.subcategory || prod.subCategory || '');
     setFormWeight(prod.weight || '1 unit');
     setFormStockCount(String(prod.stockCount ?? 20));
     setFormInStock(prod.inStock ?? true);
@@ -158,11 +190,7 @@ export default function SellerProductsScreen() {
       prev.map((p) => (p.id === product.id ? { ...p, inStock: newStock } : p))
     );
     try {
-      await patch(`/products/${product.id}`, {
-        in_stock: newStock,
-        inStock: newStock,
-        stock: newStock ? Math.max(1, product.stockCount ?? 20) : 0
-      });
+      await updateProductStock(String(product.id), product.stockCount ?? 20, newStock);
     } catch {
       // Updated locally instantly
     }
@@ -181,7 +209,7 @@ export default function SellerProductsScreen() {
       })
     );
     try {
-      await patch(`/products/${productId}`, { stock: newCount, in_stock: newCount > 0 });
+      await updateProductStock(String(productId), newCount, newCount > 0);
     } catch {}
   };
 
@@ -207,7 +235,10 @@ export default function SellerProductsScreen() {
       name: formName.trim(),
       price: parseFloat(formPrice),
       originalPrice: formOriginalPrice ? parseFloat(formOriginalPrice) : undefined,
+      mrp: formOriginalPrice ? parseFloat(formOriginalPrice) : undefined,
       category: formCategory,
+      subcategory: formSubcategory || undefined,
+      subCategory: formSubcategory || undefined,
       weight: formWeight,
       stockCount: parseInt(formStockCount, 10) || 0,
       inStock: formInStock,
@@ -228,27 +259,11 @@ export default function SellerProductsScreen() {
     setIsSubmitting(false);
 
     try {
-      const backendPayload = {
-        name: payload.name,
-        price: payload.price,
-        mrp: payload.originalPrice || payload.price,
-        category_id: payload.category,
-        category: payload.category,
-        stock: payload.stockCount,
-        in_stock: payload.inStock,
-        image_url: payload.image,
-        unit: payload.weight,
-        description: payload.description,
-      };
-      if (editingProduct) {
-        await patch(`/products/${editingProduct.id}`, backendPayload);
-      } else {
-        const created = await post('/products', backendPayload);
-        if (created && created.id) {
-          setProductList((prev) =>
-            prev.map((p) => (p.id === payload.id ? { ...p, id: String(created.id) } : p))
-          );
-        }
+      const saved = await saveProduct(payload);
+      if (saved && saved.id && !editingProduct) {
+        setProductList((prev) =>
+          prev.map((p) => (p.id === payload.id ? { ...p, id: String(saved.id) } : p))
+        );
       }
     } catch {
       // Local instant update already completed
@@ -262,7 +277,7 @@ export default function SellerProductsScreen() {
     showToast(`Product "${target.name}" removed`, 'success');
     setDeleteModalProduct(null);
     try {
-      await del(`/products/${target.id}`);
+      await deleteProduct(String(target.id));
     } catch {
       // Local update already completed
     }
@@ -320,6 +335,14 @@ export default function SellerProductsScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
+        }
         onScroll={({ nativeEvent }) => {
           const isCloseToBottom =
             nativeEvent.layoutMeasurement.height + nativeEvent.contentOffset.y >=
@@ -561,24 +584,43 @@ export default function SellerProductsScreen() {
 
               <View style={styles.rowTwo}>
                 <View style={{ flex: 1, marginRight: 6 }}>
-                  <Text style={styles.inputLabel}>Category</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="produce, snacks, dairy"
-                    value={formCategory}
-                    onChangeText={setFormCategory}
-                  />
+                  <Text style={styles.inputLabel}>Category *</Text>
+                  <Pressable
+                    style={[styles.input, { justifyContent: 'center' }]}
+                    onPress={() => setIsFormCategoryPickerOpen(true)}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Text style={{ fontSize: 13, color: '#1E293B', fontWeight: '600' }} numberOfLines={1}>
+                        {availableCategories.find((c) => c.slug === formCategory || c.id === formCategory)?.name || formCategory}
+                      </Text>
+                      <ChevronDown size={14} color="#64748B" />
+                    </View>
+                  </Pressable>
                 </View>
+
                 <View style={{ flex: 1, marginLeft: 6 }}>
-                  <Text style={styles.inputLabel}>Weight / Pack Size</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g. 1 kg, 500ml"
-                    value={formWeight}
-                    onChangeText={setFormWeight}
-                  />
+                  <Text style={styles.inputLabel}>Subcategory</Text>
+                  <Pressable
+                    style={[styles.input, { justifyContent: 'center' }]}
+                    onPress={() => setIsFormSubcategoryPickerOpen(true)}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Text style={{ fontSize: 13, color: formSubcategory ? '#1E293B' : '#94A3B8', fontWeight: '600' }} numberOfLines={1}>
+                        {formSubcategory || 'Optional...'}
+                      </Text>
+                      <ChevronDown size={14} color="#64748B" />
+                    </View>
+                  </Pressable>
                 </View>
               </View>
+
+              <Text style={styles.inputLabel}>Weight / Pack Size</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. 1 kg, 500ml, 4 pcs"
+                value={formWeight}
+                onChangeText={setFormWeight}
+              />
 
               <Text style={styles.inputLabel}>Stock Count</Text>
               <TextInput
@@ -704,6 +746,84 @@ export default function SellerProductsScreen() {
                   </Text>
                 </Pressable>
               ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* FORM CATEGORY PICKER MODAL */}
+      <Modal visible={isFormCategoryPickerOpen} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmBox}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Category</Text>
+              <Pressable onPress={() => setIsFormCategoryPickerOpen(false)}>
+                <X size={20} color={COLORS.text} />
+              </Pressable>
+            </View>
+            <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+              {availableCategories.map((cat) => {
+                const isSelected = formCategory === cat.slug || formCategory === cat.id;
+                return (
+                  <Pressable
+                    key={cat.id || cat.slug}
+                    style={[styles.pickerRow, isSelected && styles.pickerRowSelected]}
+                    onPress={() => {
+                      setFormCategory(cat.slug);
+                      setFormSubcategory('');
+                      setIsFormCategoryPickerOpen(false);
+                    }}
+                  >
+                    <Text style={[styles.pickerRowText, isSelected && styles.pickerRowTextSelected]}>
+                      {cat.icon ? `${cat.icon} ` : ''}{cat.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* FORM SUBCATEGORY PICKER MODAL */}
+      <Modal visible={isFormSubcategoryPickerOpen} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmBox}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Subcategory</Text>
+              <Pressable onPress={() => setIsFormSubcategoryPickerOpen(false)}>
+                <X size={20} color={COLORS.text} />
+              </Pressable>
+            </View>
+            <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+              <Pressable
+                style={[styles.pickerRow, !formSubcategory && styles.pickerRowSelected]}
+                onPress={() => {
+                  setFormSubcategory('');
+                  setIsFormSubcategoryPickerOpen(false);
+                }}
+              >
+                <Text style={[styles.pickerRowText, !formSubcategory && styles.pickerRowTextSelected]}>
+                  None (General Category Item)
+                </Text>
+              </Pressable>
+              {availableSubcategories.map((sub) => {
+                const isSelected = formSubcategory === sub.name;
+                return (
+                  <Pressable
+                    key={sub.id || sub.name}
+                    style={[styles.pickerRow, isSelected && styles.pickerRowSelected]}
+                    onPress={() => {
+                      setFormSubcategory(sub.name);
+                      setIsFormSubcategoryPickerOpen(false);
+                    }}
+                  >
+                    <Text style={[styles.pickerRowText, isSelected && styles.pickerRowTextSelected]}>
+                      {sub.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </ScrollView>
           </View>
         </View>

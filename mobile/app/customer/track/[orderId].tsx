@@ -47,10 +47,13 @@ export default function OrderTrackingPage() {
 
         const rawPhone = (user?.phone || '').replace(/\D/g, '');
         const phoneDigits = rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
-        const keysToSearch = phoneDigits ? [`grabit_orders_${phoneDigits}`] : ['grabit_orders_guest'];
+        const keysToSearch = phoneDigits
+          ? [`grabit_orders_${phoneDigits}`, 'grabit_seller_orders']
+          : ['grabit_orders_guest', 'grabit_seller_orders'];
         const results = await Promise.all(keysToSearch.map((k) => getItem<any[]>(k).catch(() => [])));
         const targetClean = String(orderId).toLowerCase().replace(/^(ord|gb)-?/i, '');
 
+        let foundLocal: any = null;
         for (const arr of results) {
           if (Array.isArray(arr)) {
             const found = arr.find((o) => {
@@ -59,14 +62,20 @@ export default function OrderTrackingPage() {
               if (oPhone && phoneDigits && oPhone.length >= 10 && phoneDigits.length >= 10 && oPhone.slice(-10) !== phoneDigits.slice(-10)) {
                 return false; // Belongs to a different user account! Do not leak!
               }
-              const idStr = String(o.id || o.rawId || o.orderNumber || '').toLowerCase().replace(/^(ord|gb)-?/i, '');
-              return idStr === targetClean || String(o.id) === orderId || String(o.rawId) === orderId;
+              const idStr = String(o.id || o.rawId || o.orderNumber || o.displayId || '').toLowerCase().replace(/^(ord|gb)-?/i, '');
+              return idStr === targetClean || String(o.id) === orderId || String(o.rawId) === orderId || String(o.displayId) === orderId;
             });
             if (found) {
-              setOrder(found);
-              break;
+              if (!foundLocal) {
+                foundLocal = found;
+              } else if (found.status && found.status.toLowerCase() !== 'placed') {
+                foundLocal = { ...foundLocal, ...found, status: found.status };
+              }
             }
           }
+        }
+        if (foundLocal) {
+          setOrder(foundLocal);
         }
       } catch (err) {
         // Silently ignore
@@ -76,6 +85,7 @@ export default function OrderTrackingPage() {
     };
 
     fetchTrackOrder();
+    const interval = setInterval(fetchTrackOrder, 3000);
 
     // Connect to WebSocket for live delivery rider location stream
     wsClient.connect();
@@ -86,6 +96,7 @@ export default function OrderTrackingPage() {
     });
 
     return () => {
+      clearInterval(interval);
       unsubscribe();
       wsClient.disconnect();
     };

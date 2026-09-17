@@ -143,7 +143,9 @@ export default function OrdersPage() {
 
     const preloadFromStorage = async () => {
       try {
-        const keysToRead = phoneDigits ? [`grabit_orders_${phoneDigits}`] : ['grabit_orders_guest'];
+        const keysToRead = phoneDigits
+          ? [`grabit_orders_${phoneDigits}`, 'grabit_seller_orders']
+          : ['grabit_orders_guest', 'grabit_seller_orders'];
 
         const results = await Promise.all(
           keysToRead.map((k) => getItem<any[]>(k).catch(() => []))
@@ -255,7 +257,9 @@ export default function OrdersPage() {
     }
 
     try {
-      const keysToRead = phoneDigits ? [`grabit_orders_${phoneDigits}`] : ['grabit_orders_guest'];
+      const keysToRead = phoneDigits
+        ? [`grabit_orders_${phoneDigits}`, 'grabit_seller_orders']
+        : ['grabit_orders_guest', 'grabit_seller_orders'];
 
       const readPromises = keysToRead.map((key) => getItem<any[]>(key).catch(() => []));
       const apiPromise = get<any[]>(`/orders/user/${phoneDigits}`).catch(() => null);
@@ -297,9 +301,20 @@ export default function OrdersPage() {
               const formatted = formatOrder(o);
               const key = findMatchingKey(formatted);
               const existing = uniqueMap.get(key);
-              if (existing && existing.items && existing.items.length > 0 && (!formatted.items || formatted.items.length === 0)) {
-                formatted.items = existing.items;
-                formatted.totalItems = existing.totalItems;
+              if (existing) {
+                const exStep = existing.trackerStep ?? 0;
+                const formStep = formatted.trackerStep ?? 0;
+                if (formStep > exStep || (formatted.status !== 'placed' && existing.status === 'placed')) {
+                  formatted.status = formatted.status;
+                  formatted.trackerStep = Math.max(formStep, exStep);
+                } else if (exStep > formStep) {
+                  formatted.status = existing.status;
+                  formatted.trackerStep = exStep;
+                }
+                if (existing.items && existing.items.length > 0 && (!formatted.items || formatted.items.length === 0)) {
+                  formatted.items = existing.items;
+                  formatted.totalItems = existing.totalItems;
+                }
               }
               uniqueMap.set(key, formatted);
             }
@@ -343,13 +358,19 @@ export default function OrdersPage() {
           deduplicatedList.push(o);
         } else {
           const existing = deduplicatedList[dupIndex];
-          const freshStatus = (o.status && o.status !== 'placed') ? o.status : existing.status;
-          const freshStep = (o.trackerStep !== undefined && o.trackerStep > (existing.trackerStep ?? 0)) ? o.trackerStep : existing.trackerStep;
+          const exStep = existing.trackerStep ?? 0;
+          const oStep = o.trackerStep ?? 0;
+          const bestStatus = o.status === 'cancelled'
+            ? 'cancelled'
+            : (oStep > exStep || (o.status && o.status !== 'placed'))
+            ? o.status
+            : existing.status;
+          const bestStep = o.status === 'cancelled' ? -1 : Math.max(exStep, oStep);
           deduplicatedList[dupIndex] = {
             ...existing,
             ...o,
-            status: freshStatus,
-            trackerStep: freshStep,
+            status: bestStatus,
+            trackerStep: bestStep,
             items: (o.items && o.items.length > 0) ? o.items : existing.items,
             totalItems: (o.items && o.items.length > 0) ? o.totalItems : existing.totalItems,
           };

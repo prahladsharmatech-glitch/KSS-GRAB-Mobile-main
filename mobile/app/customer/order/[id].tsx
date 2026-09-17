@@ -229,6 +229,7 @@ export default function OrderDetailsPage() {
       } else {
         keysToSearch.add('grabit_orders_guest');
       }
+      keysToSearch.add('grabit_seller_orders');
 
       const results = await Promise.all(Array.from(keysToSearch).map((k) => getItem<any[]>(k).catch(() => [])));
       let foundLocal: any = null;
@@ -240,8 +241,15 @@ export default function OrderDetailsPage() {
             if (fPhone && phoneDigits && fPhone.length >= 10 && phoneDigits.length >= 10 && fPhone.slice(-10) !== phoneDigits.slice(-10)) {
               continue; // Belongs to a different user account! Do not leak!
             }
-            foundLocal = match;
-            break;
+            if (!foundLocal) {
+              foundLocal = match;
+            } else {
+              const currentStep = getStepIndex(foundLocal.status);
+              const matchStep = getStepIndex(match.status);
+              if (matchStep > currentStep || (match.status && match.status.toLowerCase() !== 'placed' && foundLocal.status?.toLowerCase() === 'placed')) {
+                foundLocal = { ...foundLocal, ...match, status: match.status };
+              }
+            }
           }
         }
       }

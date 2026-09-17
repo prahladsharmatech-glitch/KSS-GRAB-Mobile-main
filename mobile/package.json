@@ -31,7 +31,7 @@
     "fbjs": "^3.0.5",
     "grabit-monorepo": "file:..",
     "lucide-react-native": "^0.469.0",
-    "react": "^19.2.3",
+    "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "^0.86.3",
     "react-native-maps": "1.27.2",

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, FlatList, TextInput, Pressable, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { get } from '../../services/api';
 import { Product } from '../../types';
+import { searchSynchronizedProducts, onCatalogUpdate } from '../../services/catalog';
 import { searchProducts as localSearch } from '../../data/products';
 import { ProductCard } from '../../components/ProductCard';
 import { EmptyState } from '../../components/EmptyState';
@@ -26,56 +26,39 @@ export default function SearchResultsScreen() {
     }
   }, [params.q]);
 
+  const fetchSearchResults = useCallback(async () => {
+    if (!query.trim()) {
+      setResults([]);
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const finalResults = await searchSynchronizedProducts(query);
+      const sorted = [...finalResults].sort((a, b) => {
+        if (sortBy === 'price_asc') return a.price - b.price;
+        if (sortBy === 'price_desc') return b.price - a.price;
+        return (b.rating || 0) - (a.rating || 0);
+      });
+      setResults(sorted);
+    } catch {
+      setResults(localSearch(query));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [query, sortBy]);
+
   useEffect(() => {
-    const fetchSearchResults = async () => {
-      if (!query.trim()) {
-        setResults([]);
-        return;
-      }
-      setIsLoading(true);
-      try {
-        const res = await get<Product[]>(`/products?q=${encodeURIComponent(query)}`);
-        let finalResults: Product[] = [];
-
-        if (res && Array.isArray(res) && res.length > 0) {
-          finalResults = res.map((p: any) => ({
-            ...p,
-            id: String(p.id),
-            name: p.name,
-            price: p.price,
-            originalPrice: p.originalPrice || p.original_price || Math.round(p.price * 1.25),
-            discountPercent: p.discountPercent || p.discount_percent || 15,
-            image: getValidImage(p.image || p.image_url),
-            category: p.category || p.categories?.name || 'produce',
-            inStock: p.inStock ?? (p.stock !== undefined ? p.stock > 0 : true),
-          }));
-        } else {
-          // Fallback to local search
-          const local = localSearch(query);
-          if (local && local.length > 0) {
-            finalResults = local;
-          } else {
-            // Even more broad fallback from all local products
-            finalResults = localSearch(query.split(' ')[0]) || [];
-          }
-        }
-
-        const sorted = [...finalResults].sort((a, b) => {
-          if (sortBy === 'price_asc') return a.price - b.price;
-          if (sortBy === 'price_desc') return b.price - a.price;
-          return (b.rating || 0) - (a.rating || 0);
-        });
-        setResults(sorted);
-      } catch {
-        setResults(localSearch(query));
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     const timer = setTimeout(fetchSearchResults, 300);
     return () => clearTimeout(timer);
-  }, [query, sortBy]);
+  }, [fetchSearchResults]);
+
+  // Real-time catalog update listener
+  useEffect(() => {
+    const unsub = onCatalogUpdate(() => {
+      fetchSearchResults();
+    });
+    return () => unsub();
+  }, [fetchSearchResults]);
 
   const handleSearch = (text: string) => {
     setQuery(text);

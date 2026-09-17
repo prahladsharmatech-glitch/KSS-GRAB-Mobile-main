@@ -30,7 +30,7 @@ export const DeliveryLocationMapPicker: React.FC<MapPickerProps> = ({
   initialLat = 12.9716,
   initialLng = 77.5946,
   onSelectLocation,
-  height = 200,
+  height = 175,
 }) => {
   const [coords, setCoords] = useState({ lat: initialLat, lng: initialLng });
   const zoomLevel = 14;
@@ -83,15 +83,15 @@ export const DeliveryLocationMapPicker: React.FC<MapPickerProps> = ({
 
           <View style={styles.centerPinWrapper}>
             <View style={styles.customMarker}>
-              <MapPin size={24} color={COLORS.primaryDark} />
+              <MapPin size={18} color="#0066FF" />
             </View>
           </View>
         </View>
       )}
 
       <View style={styles.overlayHint}>
-        <Navigation size={14} color={COLORS.primaryDark} style={{ marginRight: 4 }} />
-        <Text style={styles.hintText}>Delivery Location Pin • {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}</Text>
+        <Navigation size={11} color="#0066FF" style={{ marginRight: 4 }} />
+        <Text style={styles.hintText}>Pin • {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}</Text>
       </View>
     </View>
   );
@@ -102,9 +102,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: '#E2E8F0',
     position: 'relative',
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#F1F5F9',
   },
   tileCanvasWrapper: {
     width: '100%',
@@ -133,29 +133,36 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   customMarker: {
-    backgroundColor: COLORS.primaryLight,
-    padding: 6,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: COLORS.primary,
+    backgroundColor: '#EFF6FF',
+    padding: 5,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#0066FF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 3,
   },
   overlayHint: {
     position: 'absolute',
-    bottom: 8,
-    left: 12,
-    right: 12,
+    bottom: 6,
+    left: 10,
+    right: 10,
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 20,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 30,
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.8)',
   },
   hintText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '700',
-    color: COLORS.text,
+    color: '#0F172A',
   },
 });

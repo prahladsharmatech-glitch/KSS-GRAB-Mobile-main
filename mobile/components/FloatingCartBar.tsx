@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext';
 import { COLORS, SPACING, SHADOWS } from '../constants/theme';
 import { ShoppingBag, ArrowRight } from 'lucide-react-native';
 import { useRouter, usePathname } from 'expo-router';
@@ -8,6 +9,7 @@ import { useRouter, usePathname } from 'expo-router';
 export const FloatingCartBar: React.FC = () => {
   const router = useRouter();
   const pathname = usePathname();
+  const { role } = useAuth();
   const { totalItems, totalAmount } = useCart();
   const [isMounted, setIsMounted] = React.useState(false);
 
@@ -15,8 +17,37 @@ export const FloatingCartBar: React.FC = () => {
     setIsMounted(true);
   }, []);
 
-  // Hide on cart, checkout, or login screens or until mounted
-  if (!isMounted || totalItems === 0 || pathname.includes('/cart') || pathname.includes('/checkout') || pathname.includes('login')) {
+  if (!isMounted || totalItems === 0) {
+    return null;
+  }
+
+  // The cart popup MUST ONLY be visible within the Customer Portal.
+  // It should never appear in Seller, Rider, Admin, Login, or any other portal.
+  const isOtherPortal =
+    pathname.startsWith('/seller') ||
+    pathname.startsWith('/rider') ||
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('seller') ||
+    pathname.startsWith('rider') ||
+    pathname.startsWith('admin') ||
+    (role && role !== 'customer');
+
+  if (isOtherPortal) {
+    return null;
+  }
+
+  const isCustomerPortal =
+    pathname.startsWith('/customer') ||
+    pathname.startsWith('customer');
+
+  const isExcludedScreen =
+    pathname.includes('/cart') ||
+    pathname.includes('/checkout') ||
+    pathname.includes('login') ||
+    pathname === '/' ||
+    pathname === '/login';
+
+  if (!isCustomerPortal || isExcludedScreen) {
     return null;
   }
 

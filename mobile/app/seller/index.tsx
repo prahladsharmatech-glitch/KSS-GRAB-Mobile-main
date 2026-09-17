@@ -301,11 +301,15 @@ export default function SellerDashboardScreen() {
       {/* ── 1. TOP HEADER BAR ── */}
       <View style={styles.topHeader}>
         <View style={styles.headerLeftRow}>
-          <View style={styles.brandContainer}>
-            <View style={styles.brandIcon}>
-              <Zap size={16} color="#FFFFFF" />
+          <View style={styles.logoContainer}>
+            <View style={styles.brandTitleRow}>
+              <Text style={styles.logoGrab}>Grab</Text>
+              <Text style={styles.logoIt}>it</Text>
+              <View style={styles.partnerPill}>
+                <Text style={styles.partnerPillText}>SELLER</Text>
+              </View>
             </View>
-            <Text style={styles.brandName}>GrabIt Seller</Text>
+            <Text style={styles.logoTagline}>GRAB IT. GET IT. NEAR YOU.</Text>
           </View>
         </View>
 
@@ -674,23 +678,46 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  brandContainer: {
+  logoContainer: {
+    justifyContent: 'center',
+  },
+  brandTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  brandIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 6,
-  },
-  brandName: {
-    fontSize: 17,
+  logoGrab: {
+    fontSize: 22,
     fontWeight: '900',
-    color: COLORS.text,
+    color: '#0F172A',
+    letterSpacing: -0.5,
+  },
+  logoIt: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#0066FF',
+    letterSpacing: -0.5,
+  },
+  logoTagline: {
+    fontSize: 6.5,
+    fontWeight: '800',
+    color: '#0066FF',
+    letterSpacing: 0.5,
+    marginTop: -2,
+  },
+  partnerPill: {
+    backgroundColor: '#EFF6FF',
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    marginLeft: 6,
+  },
+  partnerPillText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#0066FF',
+    letterSpacing: 0.8,
   },
   headerRightRow: {
     flexDirection: 'row',

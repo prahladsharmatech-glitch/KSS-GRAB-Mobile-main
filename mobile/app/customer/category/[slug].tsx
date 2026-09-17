@@ -24,6 +24,12 @@ import { useCart } from '../../../context/CartContext';
 import { useToast } from '../../../context/ToastContext';
 import { COLORS, SPACING, SHADOWS } from '../../../constants/theme';
 import { getCanonicalSlug } from '../../../data/categories';
+import {
+  getSynchronizedCategories,
+  getSynchronizedProducts,
+  getSynchronizedSubcategories,
+  onCatalogUpdate,
+} from '../../../services/catalog';
 import { getCloudinaryUrl, getValidImage, optimizeImageUrl, DEFAULT_FALLBACK_IMAGE } from '../../../services/cloudinary';
 import {
   ArrowLeft,
@@ -603,6 +609,8 @@ export default function CategoryProductsPage() {
 
   const [activeCategoryKey, setActiveCategoryKey] = useState<string>('produce');
   const [products, setProducts] = useState<Product[]>(localProducts);
+  const [dynamicCategories, setDynamicCategories] = useState<any[]>([]);
+  const [dynamicSubcats, setDynamicSubcats] = useState<SubCategoryConfig[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -611,7 +619,6 @@ export default function CategoryProductsPage() {
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [isSuggestModalOpen, setIsSuggestModalOpen] = useState(false);
   const [visibleCount, setVisibleCount] = useState<number>(20);
-  const lastFetchRef = useRef<number>(0);
 
   // Reset pagination window when category, subcategory, search, or sort changes
   useEffect(() => {
@@ -640,64 +647,75 @@ export default function CategoryProductsPage() {
     subcategories: [{ id: 'All', label: 'All' }],
   };
 
-  const fetchProducts = async () => {
-    try {
-      const res = await get<any[]>('/products');
-      lastFetchRef.current = Date.now();
-
-      let normalized: Product[] = [];
-      if (res && Array.isArray(res) && res.length > 0) {
-        normalized = res.map((p: any) => {
-          const rawCatName =
-            (typeof p.categories === 'object' && p.categories?.name)
-              ? p.categories.name
-              : (Array.isArray(p.categories) && p.categories[0]?.name)
-              ? p.categories[0].name
-              : p.category || p.category_slug || p.name || '';
-
-          return {
-            id: String(p.id),
-            name: p.name,
-            price: Number(p.price || 0),
-            originalPrice: p.originalPrice || p.original_price || Math.round((p.price || 0) * 1.25),
-            discountPercent: p.discountPercent || p.discount_percent || 15,
-            image: getValidImage(p.image_url || p.image),
-            category: getCanonicalSlug(rawCatName),
-            inStock: p.inStock ?? (p.stock !== undefined ? p.stock > 0 : true),
-            rating: p.rating || 4.8,
-            reviewCount: p.reviewCount || p.reviews_count || 120,
-            weight: p.weight || '1 pack',
-            deliveryTimeMinutes: p.deliveryTimeMinutes || 10,
-          };
+  const topNavItems = useMemo(() => {
+    const map = new Map<string, any>();
+    CATEGORY_TOP_NAV.forEach((c) => map.set(c.slug, c));
+    dynamicCategories.forEach((c: any) => {
+      const s = getCanonicalSlug(c.slug || c.id || '');
+      if (s && !map.has(s)) {
+        map.set(s, {
+          id: s,
+          label: c.name,
+          image: c.image || c.image_url || DEFAULT_FALLBACK_IMAGE,
+          slug: s,
         });
       }
+    });
+    return Array.from(map.values());
+  }, [dynamicCategories]);
 
-      // Merge Cloud DB products with local products (DB items prioritized)
-      const mergedMap = new Map<string, Product>();
-      localProducts.forEach((lp) => mergedMap.set(String(lp.id), lp));
-      normalized.forEach((np) => mergedMap.set(String(np.id), np));
+  const activeSubcategories = useMemo(() => {
+    if (dynamicSubcats && dynamicSubcats.length > 0) {
+      return dynamicSubcats;
+    }
+    return activeConfig.subcategories || [{ id: 'All', label: 'All' }];
+  }, [dynamicSubcats, activeConfig.subcategories]);
 
-      setProducts(Array.from(mergedMap.values()));
+  const fetchProductsAndMetadata = useCallback(async () => {
+    try {
+      const [syncedProds, cats, subs] = await Promise.all([
+        getSynchronizedProducts(activeCategoryKey),
+        getSynchronizedCategories(),
+        getSynchronizedSubcategories(activeCategoryKey),
+      ]);
+
+      if (syncedProds && Array.isArray(syncedProds)) {
+        setProducts(syncedProds);
+      }
+      if (cats && Array.isArray(cats)) {
+        setDynamicCategories(cats);
+      }
+      if (subs && Array.isArray(subs)) {
+        setDynamicSubcats(subs);
+      }
     } catch {
       setProducts(localProducts);
     }
-  };
+  }, [activeCategoryKey]);
 
   useEffect(() => {
-    fetchProducts();
-  }, [activeCategoryKey, slug]);
+    fetchProductsAndMetadata();
+  }, [fetchProductsAndMetadata]);
+
+  // Real-time catalog update listener (seller portal -> customer portal)
+  useEffect(() => {
+    const unsub = onCatalogUpdate(() => {
+      fetchProductsAndMetadata();
+    });
+    return () => {
+      unsub();
+    };
+  }, [fetchProductsAndMetadata]);
 
   useFocusEffect(
     useCallback(() => {
-      if (Date.now() - lastFetchRef.current > 30000) {
-        fetchProducts();
-      }
-    }, [activeCategoryKey, slug])
+      fetchProductsAndMetadata();
+    }, [fetchProductsAndMetadata])
   );
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchProducts().finally(() => setRefreshing(false));
+    fetchProductsAndMetadata().finally(() => setRefreshing(false));
   };
 
   // Filtered & Sorted Products
@@ -784,11 +802,14 @@ export default function CategoryProductsPage() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#0066FF']} />
         }
       >
-        {/* 2. Top Category Pills Strip (23 Categories matching React Web Header) */}
+        {/* 2. Top Category Pills Strip (Dynamically includes seller created categories) */}
         <View style={styles.topCatContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.topCatScroll}>
-            {CATEGORY_TOP_NAV.map((cat) => {
+            {topNavItems.map((cat) => {
               const isActive = activeCategoryKey === cat.id;
+              const catImgUri = typeof cat.image === 'string' && (cat.image.startsWith('http://') || cat.image.startsWith('https://'))
+                ? optimizeImageUrl(cat.image, 150)
+                : getValidImage(cat.image);
               return (
                 <Pressable
                   key={cat.id}
@@ -804,7 +825,7 @@ export default function CategoryProductsPage() {
                 >
                   <View style={[styles.topCatImgCircle, isActive && styles.topCatImgCircleActive]}>
                     <Image
-                      source={{ uri: optimizeImageUrl(cat.image, 150) }}
+                      source={{ uri: catImgUri }}
                       style={styles.topCatImg}
                       resizeMode="contain"
                       fadeDuration={0}
@@ -843,20 +864,25 @@ export default function CategoryProductsPage() {
           />
         </View>
 
-        {/* 4. Sub-Category Filter Cards */}
-        {activeConfig.subcategories.length > 1 && (
+        {/* 4. Sub-Category Filter Cards (Dynamically includes seller created subcategories) */}
+        {activeSubcategories.length > 1 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subCatRow}>
-            {activeConfig.subcategories.map((sub) => {
+            {activeSubcategories.map((sub) => {
               const isSelected = selectedSubcat === sub.id;
+              const subImgUri = sub.image
+                ? typeof sub.image === 'string' && (sub.image.startsWith('http://') || sub.image.startsWith('https://'))
+                  ? optimizeImageUrl(sub.image, 200)
+                  : getValidImage(sub.image)
+                : null;
               return (
                 <Pressable
                   key={sub.id}
                   style={[styles.subCatCard, isSelected && styles.subCatCardActive]}
                   onPress={() => setSelectedSubcat(sub.id)}
                 >
-                  {sub.image ? (
+                  {subImgUri ? (
                     <Image
-                      source={{ uri: optimizeImageUrl(sub.image, 200) }}
+                      source={{ uri: subImgUri }}
                       style={styles.subCatThumbImg}
                       resizeMode="contain"
                       fadeDuration={0}

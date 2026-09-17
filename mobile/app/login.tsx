@@ -41,6 +41,7 @@ export default function LoginScreen() {
   const [debugOtp, setDebugOtp] = useState('');
   const [resendCooldown, setResendCooldown] = useState(0);
   const [name, setName] = useState('');
+  const [nameError, setNameError] = useState('');
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -104,6 +105,7 @@ export default function LoginScreen() {
     setOtp('');
     setDebugOtp('');
     setName('');
+    setNameError('');
     setEmail('');
     setError('');
     setResendCooldown(0);
@@ -223,20 +225,61 @@ export default function LoginScreen() {
     }
   };
 
+  // Live sanitation and validation for Full Name input (alphabetic characters and spaces only)
+  const handleNameChange = (text: string) => {
+    // Check if the input contains numbers or other invalid non-alphabetic characters
+    const hasInvalidChars = /[^a-zA-Z\s]/.test(text);
+
+    // Filter to ONLY allow alphabetic characters (A-Z, a-z) and spaces
+    // Prevent leading spaces and collapse multiple spaces to a single space
+    const sanitized = text
+      .replace(/[^a-zA-Z\s]/g, '')
+      .replace(/^\s+/, '')
+      .replace(/\s{2,}/g, ' ');
+
+    setName(sanitized);
+
+    if (hasInvalidChars) {
+      setNameError('Numbers and special characters are not allowed. Name must contain only alphabetic characters (A–Z, a–z).');
+    } else if (sanitized.length > 0 && sanitized.trim().length < 2) {
+      setNameError('Name must be at least 2 characters.');
+    } else {
+      setNameError('');
+      if (error) setError('');
+    }
+  };
+
   // Step 3: Complete profile for new user
   const handleProfileSubmit = async () => {
-    if (!name.trim()) {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setNameError('Please enter your full name');
       setError('Please enter your full name');
       return;
     }
+
+    const NAME_REGEX = /^[A-Za-z]+(?: [A-Za-z]+)*$/;
+    if (!NAME_REGEX.test(trimmedName)) {
+      setNameError('Numbers and special characters are not allowed. Name must contain only alphabetic characters (A–Z, a–z).');
+      setError('Name must contain only alphabetic characters (A–Z, a–z).');
+      return;
+    }
+
+    if (trimmedName.length < 2) {
+      setNameError('Name must be at least 2 characters.');
+      setError('Name must be at least 2 characters.');
+      return;
+    }
+
+    setNameError('');
     setBusy(true);
     setError('');
     try {
       const res: any = await post('/auth/complete-profile', {
         phone: fullPhone,
         otp,
-        full_name: name.trim(),
-        email: email || undefined,
+        full_name: trimmedName,
+        email: email ? email.trim() : undefined,
       });
       if (res?.access_token && res?.user) {
         await finishLogin(res.user, res.access_token);
@@ -248,8 +291,8 @@ export default function LoginScreen() {
       const fallbackUser: UserProfile = {
         id: 'user-' + Date.now(),
         phone: fullPhone,
-        name: name.trim(),
-        email: email || undefined,
+        name: trimmedName,
+        email: email ? email.trim() : undefined,
         role: fallbackRole,
       };
       await finishLogin(fallbackUser, `demo-${fallbackRole}-token`);
@@ -504,12 +547,20 @@ export default function LoginScreen() {
                     Full Name <Text style={{ color: '#EF4444' }}>*</Text>
                   </Text>
                   <TextInput
-                    style={styles.textInput}
+                    style={[styles.textInput, !!nameError && styles.textInputError]}
                     value={name}
-                    onChangeText={setName}
-                    placeholder="Enter your full name"
+                    onChangeText={handleNameChange}
+                    placeholder="Enter your full name (letters only)"
                     placeholderTextColor="#94A3B8"
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    keyboardType="default"
                   />
+                  {!!nameError && (
+                    <Text style={styles.fieldErrorText}>
+                      {nameError}
+                    </Text>
+                  )}
                 </View>
 
                 <View>
@@ -949,6 +1000,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111827',
     backgroundColor: '#FFFFFF',
+  },
+  textInputError: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
+  },
+  fieldErrorText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#EF4444',
+    marginTop: 5,
+    marginLeft: 2,
   },
   demoSection: {
     borderTopWidth: 1,

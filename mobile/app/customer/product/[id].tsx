@@ -50,11 +50,14 @@ import {
   Lock,
 } from 'lucide-react-native';
 import { SearchAutocomplete } from '../../../components/SearchAutocomplete';
-
+import { getProductById } from '../../../services/catalog';
 import { getCloudinaryUrl, getValidImage, optimizeImageUrl, DEFAULT_FALLBACK_IMAGE } from '../../../services/cloudinary';
 
 const resolveProductImage = (imageStr?: any) => {
   if (!imageStr || typeof imageStr !== 'string') return { uri: DEFAULT_FALLBACK_IMAGE };
+  if (imageStr.startsWith('http://') || imageStr.startsWith('https://')) {
+    return { uri: optimizeImageUrl(imageStr, 400) };
+  }
   const clean = getValidImage(imageStr);
   return { uri: optimizeImageUrl(clean, 400) };
 };
@@ -136,30 +139,22 @@ export default function ProductDetailPage() {
   };
 
   useEffect(() => {
-    // Check local data first for instant 0ms rendering
-    const localItem = localProducts.find((p) => String(p.id) === String(id));
-    if (localItem) {
-      setProduct(localItem);
-      setIsLoading(false);
-    }
-
-    // Background fetch for fresh API data
-    get(`/products/${id}`)
-      .then((res: any) => {
-        if (res && res.id) {
-          setProduct({
-            ...res,
-            id: String(res.id),
-            image: res.image || res.image_url,
-            originalPrice: res.originalPrice || res.original_price || Math.round(res.price * 1.25),
-            discountPercent: res.discountPercent || res.discount_percent || 15,
-            rating: res.rating || 4.8,
-            reviewsCount: res.reviewsCount || res.reviews_count || 97,
-          });
-        }
-      })
-      .catch(() => {})
-      .finally(() => setIsLoading(false));
+    let isMounted = true;
+    const loadProduct = async () => {
+      if (!id) return;
+      // Instant lookup from synchronized catalog (seller products + local + API)
+      const found = await getProductById(String(id));
+      if (isMounted && found) {
+        setProduct(found);
+        setIsLoading(false);
+      } else if (isMounted) {
+        setIsLoading(false);
+      }
+    };
+    loadProduct();
+    return () => {
+      isMounted = false;
+    };
   }, [id]);
 
   // Fallback item

@@ -182,6 +182,35 @@ export default function ActiveDeliveryScreen() {
     refreshActiveOrders();
   }, [refreshActiveOrders]);
 
+  const syncLocalStatus = async (targetOrder: any, newStatus: string) => {
+    if (!targetOrder) return;
+    try {
+      const orderId = targetOrder.rawId || targetOrder.id;
+      const rawPhone = String(targetOrder.customer_phone || targetOrder.phone || '').replace(/\D/g, '');
+      const phoneDigits = rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
+      const keysToUpdate = ['grabit_seller_orders', 'grabit_orders_guest'];
+      if (phoneDigits) keysToUpdate.push(`grabit_orders_${phoneDigits}`);
+
+      for (const k of keysToUpdate) {
+        const list = await getItem<any[]>(k).catch(() => []);
+        if (Array.isArray(list) && list.length > 0) {
+          let mod = false;
+          const updated = list.map((item) => {
+            const iId = item?.rawId || item?.id;
+            if (iId === orderId || (orderId && String(iId).includes(orderId)) || (item?.displayId && item.displayId === targetOrder.displayId)) {
+              mod = true;
+              return { ...item, status: newStatus };
+            }
+            return item;
+          });
+          if (mod) {
+            await setItem(k, updated).catch(() => {});
+          }
+        }
+      }
+    } catch {}
+  };
+
   const advanceStep = async (nextStep: StepState) => {
     if (!isOnline) {
       showToast('Please Punch In first to start this delivery.', 'error');
@@ -195,8 +224,10 @@ export default function ActiveDeliveryScreen() {
       patch(`/delivery/${orderId}/step`, { step: nextStep }).catch(() => {});
       if (['EN_ROUTE', 'ARRIVED', 'OTP_DELIVERY'].includes(nextStep)) {
         patch(`/orders/${orderId}/status`, { status: 'out_for_delivery' }).catch(() => {});
+        syncLocalStatus(order, 'out_for_delivery');
       } else if (nextStep === 'COMPLETED') {
         patch(`/orders/${orderId}/status`, { status: 'delivered' }).catch(() => {});
+        syncLocalStatus(order, 'delivered');
       }
       invalidateOrdersCache();
     }
@@ -285,6 +316,7 @@ export default function ActiveDeliveryScreen() {
         await patch(`/orders/${orderId}/status`, { status: 'delivered', ...(riderId ? { delivery_agent_id: riderId } : {}) }).catch(() => {});
         await patch(`/delivery/${orderId}/step`, { step: 'COMPLETED' }).catch(() => {});
         await removeItem(`grabit_rider_step_${orderId}`);
+        syncLocalStatus(order, 'delivered');
         invalidateOrdersCache();
       }
 

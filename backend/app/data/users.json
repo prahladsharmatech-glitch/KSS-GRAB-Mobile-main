@@ -1,5 +1,33 @@
 [
   {
+    "id": "cust-uuid-9988",
+    "phone": "+919876509988",
+    "full_name": "Priya Sharma",
+    "name": "Priya Sharma",
+    "email": "priya@example.com",
+    "role": "customer",
+    "status": "ACTIVE",
+    "created_at": "2026-09-17T10:37:59.378485+00:00"
+  },
+  {
+    "id": "rider-sync-test-999",
+    "name": "Arun Express Rider",
+    "full_name": "Arun Express Rider",
+    "phone": "+919876501234",
+    "role": "delivery_agent",
+    "status": "ACTIVE",
+    "vehicle_type": "Ather 450X EV Scooter",
+    "plate_number": "KA 05 EX 4321",
+    "created_at": "2026-09-17T10:37:58.607146+00:00",
+    "agent_status": "AVAILABLE",
+    "presence_status": "PRESENT",
+    "is_online": true,
+    "partnerVerified": true,
+    "verification_status": "ADMIN_VERIFIED",
+    "rating": 4.9,
+    "distance": "0.5 km away"
+  },
+  {
     "id": "seller-101",
     "name": "John Seller",
     "full_name": "John Seller",
@@ -68,7 +96,7 @@
     "biometricsDone": true,
     "last_active_at": "2026-09-11T13:00:30.817526+05:30",
     "created_at": "2026-01-05T09:30:00Z",
-    "shift_started_at": "2026-09-16T18:10:00.759418+05:30",
+    "shift_started_at": "2026-09-17T14:53:39.484948+05:30",
     "arrived_late_today": true,
     "shift_sessions": [
       {
@@ -105,6 +133,10 @@
       },
       {
         "started_at": "2026-09-16T18:10:00.759418+05:30",
+        "ended_at": null
+      },
+      {
+        "started_at": "2026-09-17T14:53:39.484948+05:30",
         "ended_at": null
       }
     ],

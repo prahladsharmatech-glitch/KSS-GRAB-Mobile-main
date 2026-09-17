@@ -21,7 +21,10 @@ export interface Product {
   discountPercent?: number;
   weight?: string;
   image: string;
+  image_url?: string;
   category: string;
+  subcategory?: string;
+  subCategory?: string;
   brand?: string;
   description?: string;
   rating?: number;
@@ -37,8 +40,14 @@ export interface Category {
   name: string;
   slug: string;
   icon?: string;
+  image?: string;
+  image_url?: string;
   itemCount?: number;
   subcategories?: string[];
+  level?: 'root' | 'subcategory' | 'item_type';
+  parent_id?: string | null;
+  parent_name?: string;
+  is_active?: boolean;
 }
 
 export interface CartItem {

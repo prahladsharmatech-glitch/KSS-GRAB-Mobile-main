@@ -92,11 +92,20 @@ export default function SellerProfileScreen() {
   }, [fetchProfile]);
 
   const handleSaveProfile = async () => {
+    const trimmedManager = managerName.trim();
+    if (trimmedManager) {
+      const NAME_REGEX = /^[A-Za-z]+(?: [A-Za-z]+)*$/;
+      if (!NAME_REGEX.test(trimmedManager)) {
+        showToast('Account Owner name must contain only alphabetic characters.', 'error');
+        return;
+      }
+    }
+
     setIsSaving(true);
     try {
       const payload = {
         store_name: storeName.trim(),
-        manager_name: managerName.trim(),
+        manager_name: trimmedManager,
         phone: phone.trim(),
         email: email.trim(),
         address: address.trim(),
@@ -159,7 +168,7 @@ export default function SellerProfileScreen() {
             <TextInput
               style={styles.input}
               value={managerName}
-              onChangeText={setManagerName}
+              onChangeText={(txt) => setManagerName(txt.replace(/[^a-zA-Z\s]/g, '').replace(/^\s+/, '').replace(/\s{2,}/g, ' '))}
               placeholder="John Seller"
             />
           </View>

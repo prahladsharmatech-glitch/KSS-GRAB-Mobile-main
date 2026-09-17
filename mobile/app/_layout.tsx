@@ -17,6 +17,7 @@ LogBox.ignoreLogs(['Cannot connect to Expo CLI', 'No route named', 'AIRMap', 'Re
 export default function RootLayout() {
   const pathname = usePathname();
   const isLoginPage = !pathname || pathname === '/' || pathname === '/login' || pathname === '/customer/login' || pathname.includes('login');
+  const isCustomerPortal = !!pathname && (pathname.startsWith('/customer') || pathname.startsWith('customer')) && !pathname.startsWith('/seller') && !pathname.startsWith('/rider') && !pathname.startsWith('/admin');
 
   return (
     <SafeAreaProvider>
@@ -64,7 +65,7 @@ export default function RootLayout() {
                       <Stack.Screen name="admin/map" />
                     </Stack>
                   </View>
-                  <FloatingCartBar />
+                  {isCustomerPortal && !isLoginPage && <FloatingCartBar />}
                   <MobileBottomNav />
                 </SafeAreaView>
               </CartProvider>

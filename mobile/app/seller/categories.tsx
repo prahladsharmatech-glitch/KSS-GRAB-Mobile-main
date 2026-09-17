@@ -25,7 +25,19 @@ import {
   ChevronRight,
   Tag,
   X,
+  ArrowLeft,
 } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { categories as defaultCategories, getCanonicalSlug } from '../../data/categories';
+import { products as defaultProducts } from '../../data/products';
+import { getValidImage } from '../../services/cloudinary';
+import { getItem, setItem } from '../../services/storage';
+import {
+  saveCategory as syncSaveCategory,
+  deleteCategory as syncDeleteCategory,
+  onCatalogUpdate,
+  getSynchronizedProducts,
+} from '../../services/catalog';
 
 interface SellerCategory {
   id: string;
@@ -40,10 +52,198 @@ interface SellerCategory {
   is_active: boolean;
 }
 
+const SUBCATEGORY_MAP: Record<string, Array<{ name: string; icon: string; image?: string }>> = {
+  'produce': [
+    { name: 'Fresh Fruits', icon: '🍎', image: 'apples-real.jpg' },
+    { name: 'Fresh Vegetables', icon: '🥦', image: 'fresh-red-apples.jpg' },
+    { name: 'Exotic & Organic', icon: '🥑', image: 'fresh-fruits-veggies-hero-transparent.png' },
+  ],
+  'dairy-bakery': [
+    { name: 'Milk & Butter', icon: '🥛', image: 'amul-butter-real.jpg' },
+    { name: 'Cheese & Paneer', icon: '🧀', image: 'combo_cheese.jpg' },
+    { name: 'Fresh Bread & Buns', icon: '🍞', image: 'brown_bread_real.jpg' },
+  ],
+  'snacks-munchies': [
+    { name: 'Potato Chips', icon: '🥔', image: 'lays-magic-masala.png' },
+    { name: 'Tortilla & Corn Nachos', icon: '🌽', image: 'subcat-tortilla-corn.jpg' },
+    { name: 'Namkeen & Crunch', icon: '🥨', image: 'subcat-namkeen.jpg' },
+  ],
+  'beverages': [
+    { name: 'Soft Drinks & Sodas', icon: '🥤', image: 'coca-cola-real.jpg' },
+    { name: 'Energy & Health Drinks', icon: '⚡', image: 'red_bull_real.jpg' },
+    { name: 'Fresh Fruit Juices', icon: '🧃', image: 'tropicana_juice_real.jpg' },
+  ],
+  'staples': [
+    { name: 'Atta & Flours', icon: '🌾', image: 'aashirvaad-atta-real.jpg' },
+    { name: 'Basmati & Regular Rice', icon: '🍚', image: 'fortune_basmati_real.jpg' },
+    { name: 'Dals & Pulses', icon: '🥣', image: 'toor_dal_real.jpg' },
+  ],
+  'chocolates': [
+    { name: 'Premium Chocolates', icon: '🍫', image: 'cadbury-silk-real.jpg' },
+    { name: 'Wafer Bars & Candies', icon: '🍬', image: 'kitkat_real.jpg' },
+    { name: 'Spreads & Gift Boxes', icon: '🎁', image: 'cadbury-dairy-milk-silk.jpg' },
+  ],
+  'personal-care': [
+    { name: 'Handwash & Sanitizers', icon: '🧴', image: 'dettol-handwash-real.jpg' },
+    { name: 'Hair Care & Shampoos', icon: '💇', image: 'combo_hygiene.jpg' },
+    { name: 'Bath Soaps & Skincare', icon: '🧼', image: 'dettol_real.jpg' },
+  ],
+  'household': [
+    { name: 'Detergents & Fabric Care', icon: '🧺', image: 'surf-excel-real.jpg' },
+    { name: 'Dishwash & Kitchen Cleaners', icon: '🍽️', image: 'surf_real.jpg' },
+    { name: 'Floor & Surface Cleaners', icon: '🧹', image: 'dettol_real.jpg' },
+  ],
+  'tea-coffee': [
+    { name: 'Instant & Filter Coffee', icon: '☕', image: 'subcat-instant-coffee.jpg' },
+    { name: 'Tea Powder & Green Tea', icon: '🍵', image: 'combo_tea.jpg' },
+  ],
+  'biscuits': [
+    { name: 'Cream Biscuits', icon: '🍪', image: 'oreo-biscuits-real.jpg' },
+    { name: 'Cookies & Rusks', icon: '🧇', image: 'parle_g_real.jpg' },
+  ],
+  'instant-food': [
+    { name: 'Instant Noodles & Pasta', icon: '🍜', image: 'maggi_noodles_real.jpg' },
+    { name: 'Ready-to-Eat Curries & Soups', icon: '🍲', image: 'instant-noodles-hero-transparent.png' },
+  ],
+  'oil': [
+    { name: 'Cooking & Refined Oil', icon: '🛢️', image: 'fortune-oil-real.jpg' },
+    { name: 'Desi Ghee & Butter Oil', icon: '🧈', image: 'fortune_oil_real.jpg' },
+  ],
+  'electronics': [
+    { name: 'Headphones & TWS Audio', icon: '🎧', image: 'subcat-headphones.jpg' },
+    { name: 'Smartwatches & Accessories', icon: '⌚', image: 'electronics-hero-banner.jpg' },
+  ],
+  'fashion': [
+    { name: 'Sneakers & Casual Shoes', icon: '👟', image: 'sneakers.jpg' },
+    { name: 'Eyewear & Accessories', icon: '🕶️', image: 'sneakers.jpg' },
+  ],
+  'baby-care': [
+    { name: 'Diapers & Gentle Wipes', icon: '👶', image: 'category-baby-care.jpg' },
+    { name: 'Baby Food & Bath Care', icon: '🍼', image: 'category-baby-care.jpg' },
+  ],
+  'pet-care': [
+    { name: 'Dog Food & Chew Treats', icon: '🐶', image: 'category-pet-care.jpg' },
+    { name: 'Cat Food & Pet Grooming', icon: '🐱', image: 'category-pet-care.jpg' },
+  ],
+  'beauty-cosmetics': [
+    { name: 'Face Serums & Moisturizers', icon: '💄', image: 'subcat-face-serums.jpg' },
+    { name: 'Makeup & Beauty Essentials', icon: '💅', image: 'category-beauty-cosmetics.jpg' },
+  ],
+  'health-wellness': [
+    { name: 'Vitamins & Immunity Boosters', icon: '💊', image: 'category-health-wellness.jpg' },
+    { name: 'First Aid & Pain Relief', icon: '🩹', image: 'category-health-wellness.jpg' },
+  ],
+  'meat-seafood': [
+    { name: 'Fresh Poultry & Chicken', icon: '🍗', image: 'banner-chicken-eggs.jpg' },
+    { name: 'Farm Brown & White Eggs', icon: '🥚', image: 'banner-chicken-eggs.jpg' },
+    { name: 'Fish & Fresh Seafood', icon: '🐟', image: 'banner-fresh-meat-section.jpg' },
+  ],
+  'home-kitchen': [
+    { name: 'Cookware & Non-Stick Pans', icon: '🍳', image: 'category-home-kitchen.jpg' },
+    { name: 'Water Bottles & Glass Flasks', icon: '🍶', image: 'category-home-kitchen.jpg' },
+  ],
+  'stationery-office': [
+    { name: 'Notebooks, Diaries & Pads', icon: '📓', image: 'category-stationery-office.jpg' },
+    { name: 'Pens, Markers & Art Sets', icon: '✒️', image: 'category-stationery-office.jpg' },
+  ],
+  'sports-fitness': [
+    { name: 'Sports Gear & Badminton', icon: '🏸', image: 'category-sports-fitness.jpg' },
+    { name: 'Whey Protein & Gym Shakers', icon: '🏋️', image: 'category-sports-fitness.jpg' },
+  ],
+  'toys-games': [
+    { name: 'Building Bricks & Blocks', icon: '🧱', image: 'category-toys-games.jpg' },
+    { name: 'Board Games & Puzzles', icon: '🎲', image: 'category-toys-games.jpg' },
+  ],
+  'pooja-needs': [
+    { name: 'Agarbatti & Dhoop Sticks', icon: '🪔', image: 'category-pooja-needs.jpg' },
+    { name: 'Camphor, Diyas & Wicks', icon: '🕯️', image: 'category-pooja-needs.jpg' },
+  ],
+};
+
+function buildProductCounts(prodsRes: any): Map<string, number> {
+  const prodCountsByCat = new Map<string, number>();
+
+  for (const p of defaultProducts) {
+    const cId = String(p.category || p.category_slug || '');
+    const slug = getCanonicalSlug(cId);
+    if (cId) {
+      prodCountsByCat.set(cId, (prodCountsByCat.get(cId) || 0) + 1);
+      prodCountsByCat.set(cId.toLowerCase(), (prodCountsByCat.get(cId.toLowerCase()) || 0) + 1);
+    }
+    if (slug) {
+      prodCountsByCat.set(slug, (prodCountsByCat.get(slug) || 0) + 1);
+    }
+  }
+
+  if (Array.isArray(prodsRes)) {
+    for (const p of prodsRes) {
+      const cId = String(p.category_id || p.category || '');
+      const slug = getCanonicalSlug(cId);
+      if (cId) {
+        prodCountsByCat.set(cId, (prodCountsByCat.get(cId) || 0) + 1);
+        prodCountsByCat.set(cId.toLowerCase(), (prodCountsByCat.get(cId.toLowerCase()) || 0) + 1);
+      }
+      if (slug) {
+        prodCountsByCat.set(slug, (prodCountsByCat.get(slug) || 0) + 1);
+      }
+    }
+  }
+
+  return prodCountsByCat;
+}
+
+function getBaseSellerCategories(prodCountsByCat?: Map<string, number>): SellerCategory[] {
+  const allCats: SellerCategory[] = [];
+
+  defaultCategories.forEach((cat, idx) => {
+    const slug = cat.slug || getCanonicalSlug(cat.name || '') || 'category-' + idx;
+    const catId = String(cat.id || 'cat-' + idx);
+    const rawImage = cat.image ? getValidImage(cat.image) : undefined;
+    const pCount = prodCountsByCat
+      ? (prodCountsByCat.get(catId) || prodCountsByCat.get(slug) || prodCountsByCat.get(cat.name.toLowerCase()) || cat.itemCount || 12)
+      : (cat.itemCount || 12);
+
+    const rootCat: SellerCategory = {
+      id: catId,
+      name: cat.name,
+      slug,
+      icon: cat.icon || '📦',
+      image: rawImage,
+      level: 'root',
+      parent_id: null,
+      product_count: pCount,
+      is_active: true,
+    };
+    allCats.push(rootCat);
+
+    const subs = SUBCATEGORY_MAP[slug];
+    if (subs && subs.length > 0) {
+      subs.forEach((sub, sIdx) => {
+        const subImage = sub.image ? getValidImage(sub.image) : undefined;
+        allCats.push({
+          id: `${catId}-sub-${sIdx + 1}`,
+          name: sub.name,
+          slug: `${slug}-${sub.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+          icon: sub.icon || '📁',
+          image: subImage,
+          level: 'subcategory',
+          parent_id: catId,
+          parent_name: cat.name,
+          product_count: Math.max(1, Math.round(pCount / (subs.length + 1))),
+          is_active: true,
+        });
+      });
+    }
+  });
+
+  return allCats;
+}
+
 export default function SellerCategoriesScreen() {
+  const router = useRouter();
   const { showToast } = useToast();
-  const [categoryList, setCategoryList] = useState<SellerCategory[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [categoryList, setCategoryList] = useState<SellerCategory[]>(() => getBaseSellerCategories());
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'tree'>('grid');
@@ -63,45 +263,88 @@ export default function SellerCategoriesScreen() {
   const [formIsActive, setFormIsActive] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Live cloud categories fetch with real product count cross-referencing
+  // Live cloud categories fetch with product count cross-referencing and fallback
   const fetchCategoriesLive = useCallback(async () => {
     try {
-      const [catsRes, prodsRes] = await Promise.all([
+      const [stored, catsRes, allProds] = await Promise.all([
+        getItem<SellerCategory[]>('grabit_seller_categories').catch(() => null),
         get('/categories').catch(() => []),
-        get('/products').catch(() => [])
+        getSynchronizedProducts().catch(() => defaultProducts),
       ]);
 
-      const prodsList = Array.isArray(prodsRes) ? prodsRes : [];
-      const prodCountsByCat = new Map<string, number>();
-      for (const p of prodsList) {
-        const cId = String(p.category_id || p.category || '');
-        if (cId) {
-          prodCountsByCat.set(cId, (prodCountsByCat.get(cId) || 0) + 1);
+      const prodCountsByCat = buildProductCounts(allProds);
+      const baseDefaults = getBaseSellerCategories(prodCountsByCat);
+
+      // Unified map ensuring all default and custom categories are maintained
+      const mergedMap = new Map<string, SellerCategory>();
+
+      // 1. Base defaults (all 18 root categories + subcategories)
+      for (const def of baseDefaults) {
+        mergedMap.set(def.slug.toLowerCase(), def);
+        mergedMap.set(String(def.id), def);
+      }
+
+      // 2. Cloud categories (overlay by slug or id)
+      if (Array.isArray(catsRes) && catsRes.length > 0) {
+        for (const cat of catsRes) {
+          const catId = String(cat.id || 'cat-' + (cat.slug || ''));
+          const rawImage = (cat.image_url && cat.image_url.trim()) || (cat.image && cat.image.trim()) || '';
+          const slug = cat.slug || getCanonicalSlug(cat.name || '') || catId;
+          const pCount = prodCountsByCat.get(catId) || prodCountsByCat.get(slug) || prodCountsByCat.get(String(cat.name || '').toLowerCase()) || 0;
+          const existing = mergedMap.get(slug.toLowerCase()) || mergedMap.get(catId);
+
+          const item: SellerCategory = {
+            id: catId,
+            name: cat.name || existing?.name || 'Unnamed Category',
+            slug,
+            icon: cat.icon || existing?.icon || '📦',
+            image: rawImage ? getValidImage(rawImage) : existing?.image,
+            level: cat.level || existing?.level || 'root',
+            parent_id: cat.parent_id ? String(cat.parent_id) : (existing?.parent_id || null),
+            parent_name: existing?.parent_name,
+            product_count: pCount || existing?.product_count || 0,
+            is_active: cat.is_active ?? existing?.is_active ?? true,
+          };
+          mergedMap.set(slug.toLowerCase(), item);
+          mergedMap.set(catId, item);
         }
       }
 
-      if (Array.isArray(catsRes)) {
-        const formatted: SellerCategory[] = catsRes.map((cat: any, idx: number) => {
-          const catId = String(cat.id || 'cat-' + idx);
-          const rawImage = (cat.image_url && cat.image_url.trim()) || (cat.image && cat.image.trim()) || '';
-          const pCount = prodCountsByCat.get(catId) || prodCountsByCat.get(cat.slug) || 0;
+      // 3. Stored seller categories (highest priority overlay)
+      if (Array.isArray(stored) && stored.length > 0) {
+        for (const sc of stored) {
+          const catId = String(sc.id);
+          const slug = sc.slug || getCanonicalSlug(sc.name || '');
+          const existing = mergedMap.get(slug.toLowerCase()) || mergedMap.get(catId);
+          const pCount = prodCountsByCat.get(catId) || prodCountsByCat.get(slug) || sc.product_count || existing?.product_count || 0;
 
-          return {
+          const item: SellerCategory = {
+            ...(existing || {}),
+            ...sc,
             id: catId,
-            name: cat.name || 'Unnamed Category',
-            slug: cat.slug || cat.name?.toLowerCase()?.replace(/\s+/g, '-') || 'category-' + idx,
-            icon: cat.icon || '📦',
-            image: rawImage || undefined,
-            level: cat.level || 'root',
-            parent_id: cat.parent_id ? String(cat.parent_id) : null,
+            name: sc.name || existing?.name || 'Category',
+            slug,
             product_count: pCount,
-            is_active: cat.is_active ?? true,
+            is_active: sc.is_active ?? existing?.is_active ?? true,
           };
-        });
-        setCategoryList(formatted);
+          mergedMap.set(slug.toLowerCase(), item);
+          mergedMap.set(catId, item);
+        }
       }
+
+      // Collect unique categories preserving root + subcategory hierarchy
+      const uniqueList: SellerCategory[] = [];
+      const seenIds = new Set<string>();
+      for (const cat of mergedMap.values()) {
+        if (!seenIds.has(cat.id)) {
+          seenIds.add(cat.id);
+          uniqueList.push(cat);
+        }
+      }
+
+      setCategoryList(uniqueList);
     } catch {
-      // Retain list
+      // Retain populated list
     } finally {
       setIsLoading(false);
     }
@@ -109,6 +352,13 @@ export default function SellerCategoriesScreen() {
 
   useEffect(() => {
     fetchCategoriesLive();
+  }, [fetchCategoriesLive]);
+
+  useEffect(() => {
+    const unsub = onCatalogUpdate(() => {
+      fetchCategoriesLive();
+    });
+    return unsub;
   }, [fetchCategoriesLive]);
 
   const openAddModal = () => {
@@ -143,64 +393,64 @@ export default function SellerCategoriesScreen() {
 
     setIsSubmitting(true);
     const slug = formSlug.trim() || formName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const parentCat = formParentId ? categoryList.find((c) => c.id === formParentId) : undefined;
+
     const payload: SellerCategory = {
       id: editingCategory ? editingCategory.id : 'cat-' + Date.now(),
       name: formName.trim(),
       slug,
       icon: formIcon,
-      image: formImage.trim() || undefined,
+      image: formImage.trim() ? getValidImage(formImage.trim()) : undefined,
       level: formLevel,
       parent_id: formParentId || null,
+      parent_name: parentCat?.name,
       is_active: formIsActive,
       product_count: editingCategory?.product_count || 0,
     };
 
+    let updatedList: SellerCategory[];
     if (editingCategory) {
-      setCategoryList((prev) =>
-        prev.map((c) => (c.id === editingCategory.id ? { ...c, ...payload } : c))
-      );
+      updatedList = categoryList.map((c) => (c.id === editingCategory.id ? { ...c, ...payload } : c));
+      setCategoryList(updatedList);
       showToast(`Category "${formName}" updated!`, 'success');
     } else {
-      setCategoryList((prev) => [payload, ...prev]);
+      updatedList = [payload, ...categoryList];
+      setCategoryList(updatedList);
       showToast(`Category "${formName}" created!`, 'success');
     }
+    await setItem('grabit_seller_categories', updatedList).catch(() => {});
     setIsModalVisible(false);
     setIsSubmitting(false);
 
     try {
-      if (editingCategory) {
-        await patch(`/categories/${editingCategory.id}`, payload);
-      } else {
-        const created = await post('/categories', payload);
-        if (created && created.id) {
-          setCategoryList((prev) =>
-            prev.map((c) => (c.id === payload.id ? { ...c, id: String(created.id) } : c))
-          );
-        }
-      }
+      await syncSaveCategory(payload);
     } catch {
       // Local instant update already completed
     }
   };
+
   const handleToggleActive = async (cat: SellerCategory) => {
     const nextState = !cat.is_active;
-    setCategoryList((prev) =>
-      prev.map((c) => (c.id === cat.id ? { ...c, is_active: nextState } : c))
-    );
+    const updated = categoryList.map((c) => (c.id === cat.id ? { ...c, is_active: nextState } : c));
+    setCategoryList(updated);
+    await setItem('grabit_seller_categories', updated).catch(() => {});
     showToast(`Category "${cat.name}" is now ${nextState ? 'Active' : 'Inactive'}`, 'info');
     try {
-      await patch(`/categories/${cat.id}`, { is_active: nextState });
+      await syncSaveCategory({ ...cat, is_active: nextState });
     } catch {}
   };
+
   const handleDeleteCategory = async () => {
     if (!deleteModalCat) return;
     const target = deleteModalCat;
-    setCategoryList((prev) => prev.filter((c) => c.id !== target.id));
+    const updated = categoryList.filter((c) => c.id !== target.id && c.parent_id !== target.id);
+    setCategoryList(updated);
+    await setItem('grabit_seller_categories', updated).catch(() => {});
     showToast(`Category "${target.name}" deleted`, 'success');
     setDeleteModalCat(null);
 
     try {
-      await del(`/categories/${target.id}`);
+      await syncDeleteCategory(target.id);
     } catch {
       // Local instant update already completed
     }
@@ -224,9 +474,22 @@ export default function SellerCategoriesScreen() {
     <View style={styles.container}>
       {/* HEADER BAR */}
       <View style={styles.topHeader}>
-        <View style={styles.titleRow}>
+        <View style={styles.headerTitleRow}>
+          <Pressable
+            style={styles.backBtnCircle}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/seller' as any);
+              }
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <ArrowLeft size={18} color="#0F172A" />
+          </Pressable>
           <Grid size={22} color={COLORS.primary} style={{ marginRight: 8 }} />
-          <Text style={styles.headerTitle}>Categories ({categoryList.length})</Text>
+          <Text style={styles.headerTitle}>Categories ({rootCategories.length})</Text>
         </View>
         <Pressable style={styles.addBtn} onPress={openAddModal}>
           <Plus size={16} color="#FFFFFF" />
@@ -302,10 +565,18 @@ export default function SellerCategoriesScreen() {
       ) : viewMode === 'grid' ? (
         <ScrollView contentContainerStyle={styles.gridTwoColContent} showsVerticalScrollIndicator={false}>
           <View style={styles.gridTwoColRow}>
-            {filteredCategories.map((item, idx) => {
-              const subCount = categoryList.filter((c) => c.parent_id === item.id).length || 4;
+            {(searchQuery.trim() ? filteredCategories : filteredCategories.filter((c) => c.level === 'root' || !c.parent_id)).map((item, idx) => {
+              const subCount = categoryList.filter((c) => c.parent_id === item.id).length || 3;
+              const isEditingThis = editingCategory?.id === item.id;
               return (
-                <View key={item.id ? String(item.id) : 'cat-' + idx} style={styles.gridCategoryCard}>
+                <Pressable
+                  key={item.id ? String(item.id) : 'cat-' + idx}
+                  style={[
+                    styles.gridCategoryCard,
+                    isEditingThis && styles.gridCategoryCardEditing,
+                  ]}
+                  onPress={() => openEditModal(item)}
+                >
                   {/* Category Image with Overlaid Active Status Badge */}
                   <View style={styles.catImageBox}>
                     {item.image ? (
@@ -322,14 +593,20 @@ export default function SellerCategoriesScreen() {
                         {item.is_active ? 'Active' : 'Inactive'}
                       </Text>
                     </View>
+
+                    {isEditingThis ? (
+                      <View style={styles.editingPillBadge}>
+                        <Text style={styles.editingPillText}>Editing</Text>
+                      </View>
+                    ) : null}
                   </View>
 
                   {/* Category Title & Subtitle */}
-                  <Text style={styles.catTitle} numberOfLines={1}>
+                  <Text style={[styles.catTitle, isEditingThis && { color: COLORS.primary }]} numberOfLines={1}>
                     {item.name}
                   </Text>
                   <Text style={styles.catSubTitle} numberOfLines={1}>
-                    {item.name} quick-...
+                    {item.name} essentials
                   </Text>
 
                   {/* Item Stats & Active Toggle Switch */}
@@ -341,7 +618,10 @@ export default function SellerCategoriesScreen() {
 
                     <Pressable
                       style={[styles.activePillSwitch, item.is_active && styles.activePillSwitchOn]}
-                      onPress={() => handleToggleActive(item)}
+                      onPress={(e) => {
+                        e?.stopPropagation?.();
+                        handleToggleActive(item);
+                      }}
                     >
                       <View style={[styles.switchDot, item.is_active && styles.switchDotOn]} />
                       <Text style={[styles.switchText, item.is_active && styles.switchTextOn]}>
@@ -352,19 +632,36 @@ export default function SellerCategoriesScreen() {
 
                   {/* Side-by-Side Action Buttons */}
                   <View style={styles.cardActionsRow}>
-                    <Pressable style={styles.gridEditBtn} onPress={() => openEditModal(item)}>
-                      <Edit2 size={12} color="#334155" style={{ marginRight: 4 }} />
-                      <Text style={styles.gridEditBtnText}>Edit</Text>
+                    <Pressable
+                      style={[styles.gridEditBtn, isEditingThis && styles.gridEditBtnActive]}
+                      onPress={() => openEditModal(item)}
+                    >
+                      <Edit2 size={12} color={isEditingThis ? COLORS.primary : '#334155'} style={{ marginRight: 4 }} />
+                      <Text style={[styles.gridEditBtnText, isEditingThis && { color: COLORS.primary, fontWeight: '800' }]}>
+                        {isEditingThis ? 'Editing' : 'Edit'}
+                      </Text>
                     </Pressable>
 
-                    <Pressable style={styles.gridDeleteBtn} onPress={() => setDeleteModalCat(item)}>
+                    <Pressable
+                      style={styles.gridDeleteBtn}
+                      onPress={(e) => {
+                        e?.stopPropagation?.();
+                        setDeleteModalCat(item);
+                      }}
+                    >
                       <Trash2 size={12} color="#EF4444" style={{ marginRight: 4 }} />
                       <Text style={styles.gridDeleteBtnText}>Delete</Text>
                     </Pressable>
                   </View>
-                </View>
+                </Pressable>
               );
             })}
+            {filteredCategories.length === 0 ? (
+              <View style={{ width: '100%', alignItems: 'center', justifyContent: 'center', paddingVertical: 40 }}>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.text }}>No categories found</Text>
+                <Text style={{ fontSize: 12, color: COLORS.textSecondary, marginTop: 4 }}>Try searching with another term</Text>
+              </View>
+            ) : null}
           </View>
         </ScrollView>
       ) : (
@@ -372,35 +669,55 @@ export default function SellerCategoriesScreen() {
         <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
           {rootCategories.map((root) => {
             const subcats = categoryList.filter((c) => c.parent_id === root.id);
+            const isEditingRoot = editingCategory?.id === root.id;
             return (
-              <View key={root.id} style={styles.treeCard}>
-                <View style={styles.treeHeader}>
+              <View key={root.id} style={[styles.treeCard, isEditingRoot && styles.treeCardEditing]}>
+                <Pressable style={styles.treeHeader} onPress={() => openEditModal(root)}>
                   {root.image ? (
                     <Image source={{ uri: root.image }} style={styles.treeThumb} resizeMode="cover" />
                   ) : (
                     <Text style={styles.iconEmoji}>{root.icon || '📦'}</Text>
                   )}
-                  <Text style={styles.treeTitle}>{root.name}</Text>
+                  <Text style={[styles.treeTitle, isEditingRoot && { color: COLORS.primary }]}>{root.name}</Text>
+                  {isEditingRoot ? (
+                    <View style={styles.treeEditingBadge}>
+                      <Text style={styles.treeEditingBadgeText}>Editing</Text>
+                    </View>
+                  ) : null}
                   <Pressable style={{ marginLeft: 'auto' }} onPress={() => openEditModal(root)}>
                     <Edit2 size={14} color={COLORS.primary} />
                   </Pressable>
-                </View>
+                </Pressable>
                 {subcats.length > 0 ? (
                   <View style={styles.subList}>
-                    {subcats.map((sub) => (
-                      <View key={sub.id} style={styles.subRow}>
-                        <ChevronRight size={14} color={COLORS.textSecondary} style={{ marginRight: 6 }} />
-                        {sub.image ? (
-                          <Image source={{ uri: sub.image }} style={styles.subThumb} resizeMode="cover" />
-                        ) : (
-                          <Text style={styles.subEmoji}>{sub.icon || '📁'}</Text>
-                        )}
-                        <Text style={styles.subName}>{sub.name}</Text>
-                        <Pressable style={{ marginLeft: 'auto' }} onPress={() => openEditModal(sub)}>
-                          <Edit2 size={12} color={COLORS.textSecondary} />
+                    {subcats.map((sub) => {
+                      const isEditingSub = editingCategory?.id === sub.id;
+                      return (
+                        <Pressable
+                          key={sub.id}
+                          style={[styles.subRow, isEditingSub && styles.subRowEditing]}
+                          onPress={() => openEditModal(sub)}
+                        >
+                          <ChevronRight size={14} color={COLORS.textSecondary} style={{ marginRight: 6 }} />
+                          {sub.image ? (
+                            <Image source={{ uri: sub.image }} style={styles.subThumb} resizeMode="cover" />
+                          ) : (
+                            <Text style={styles.subEmoji}>{sub.icon || '📁'}</Text>
+                          )}
+                          <Text style={[styles.subName, isEditingSub && { color: COLORS.primary, fontWeight: '700' }]}>
+                            {sub.name}
+                          </Text>
+                          {isEditingSub ? (
+                            <View style={[styles.treeEditingBadge, { marginLeft: 8 }]}>
+                              <Text style={styles.treeEditingBadgeText}>Editing</Text>
+                            </View>
+                          ) : null}
+                          <Pressable style={{ marginLeft: 'auto' }} onPress={() => openEditModal(sub)}>
+                            <Edit2 size={12} color={COLORS.textSecondary} />
+                          </Pressable>
                         </Pressable>
-                      </View>
-                    ))}
+                      );
+                    })}
                   </View>
                 ) : (
                   <Text style={styles.noSubText}>No subcategories mapped</Text>
@@ -556,6 +873,19 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  backBtnCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -666,6 +996,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     ...SHADOWS.sm,
+  },
+  gridCategoryCardEditing: {
+    borderColor: COLORS.primary,
+    borderWidth: 2,
+    backgroundColor: '#F8FAFC',
+    ...SHADOWS.md,
+  },
+  editingPillBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  editingPillText: {
+    color: '#FFFFFF',
+    fontSize: 9.5,
+    fontWeight: '800',
   },
   catImageBox: {
     width: '100%',
@@ -785,6 +1135,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+  },
+  gridEditBtnActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primaryLight,
   },
   gridEditBtnText: {
     fontSize: 11,
@@ -933,6 +1287,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
+  treeCardEditing: {
+    borderColor: COLORS.primary,
+    borderWidth: 1.5,
+    backgroundColor: '#F8FAFC',
+  },
   treeHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -944,6 +1303,18 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginLeft: 8,
   },
+  treeEditingBadge: {
+    backgroundColor: COLORS.primaryLight,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  treeEditingBadgeText: {
+    fontSize: 10,
+    color: COLORS.primary,
+    fontWeight: '800',
+  },
   subList: {
     marginLeft: 12,
     borderLeftWidth: 2,
@@ -954,6 +1325,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginVertical: 4,
+  },
+  subRowEditing: {
+    backgroundColor: COLORS.primaryLight,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
   subEmoji: {
     fontSize: 14,
@@ -971,15 +1348,19 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.35)',
     justifyContent: 'flex-end',
+    alignItems: 'center',
   },
   modalContainer: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: '85%',
+    maxHeight: '80%',
+    width: '100%',
+    maxWidth: 560,
     padding: SPACING.md,
+    ...SHADOWS.lg,
   },
   modalHeader: {
     flexDirection: 'row',

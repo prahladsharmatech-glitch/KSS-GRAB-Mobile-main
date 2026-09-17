@@ -63,7 +63,7 @@ import {
   Phone,
   CheckCircle,
 } from 'lucide-react-native';
-import { get, post, patch, del } from '../../services/api';
+import { get, post, patch, del, fetchDirectFromSupabase } from '../../services/api';
 import { getItem, setItem, removeItem, removeSecureItem } from '../../services/storage';
 import { products as baseProducts } from '../../data/products';
 import { getValidImage } from '../../services/cloudinary';
@@ -71,6 +71,7 @@ import { AdminBottomNav } from '../../components/admin/AdminBottomNav';
 import { SupermarketLocationMapPicker } from '../../components/admin/SupermarketLocationMapPicker';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
+import { savePartner, onPartnersUpdate, PARTNERS_KEY } from '../../services/partners';
 import { COLORS, SHADOWS, SPACING } from '../../constants/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -116,13 +117,16 @@ const deduplicateProducts = (list: any[]): any[] => {
 const deduplicatePartners = (list: any[]): any[] => {
   if (!Array.isArray(list)) return [];
   const seen = new Set<string>();
+  const seenPhones = new Set<string>();
   const result: any[] = [];
 
   list.forEach((p, idx) => {
     if (!p) return;
-    const idKey = p.id ? String(p.id) : p.phone ? String(p.phone) : `partner_${idx}`;
-    if (!seen.has(idKey)) {
+    const cleanPhone = p.phone ? String(p.phone).replace(/\D/g, '').slice(-10) : '';
+    const idKey = p.id ? String(p.id) : (cleanPhone || `partner_${idx}`);
+    if (!seen.has(idKey) && (!cleanPhone || !seenPhones.has(cleanPhone))) {
       seen.add(idKey);
+      if (cleanPhone) seenPhones.add(cleanPhone);
       result.push(p);
     }
   });
@@ -263,7 +267,10 @@ export default function AdminPortalScreen({ initialTab }: { initialTab?: string 
   }, []);
 
   useEffect(() => {
-    if (initialTab) {
+    if (initialTab === 'users') {
+      setActiveTab('partners');
+      setPartnerFilter('CUSTOMERS');
+    } else if (initialTab) {
       setActiveTab(initialTab);
     }
   }, [initialTab]);
@@ -322,6 +329,8 @@ export default function AdminPortalScreen({ initialTab }: { initialTab?: string 
   const [newPartnerPhone, setNewPartnerPhone] = useState('');
   const [newPartnerRole, setNewPartnerRole] = useState<'seller' | 'delivery_agent'>('seller');
   const [newPartnerEmail, setNewPartnerEmail] = useState('');
+  const [newPartnerVehicle, setNewPartnerVehicle] = useState('EV 2-Wheeler');
+  const [newPartnerPlate, setNewPartnerPlate] = useState('');
 
   const [newProdName, setNewProdName] = useState('');
   const [newProdPrice, setNewProdPrice] = useState('');
@@ -365,12 +374,24 @@ export default function AdminPortalScreen({ initialTab }: { initialTab?: string 
         }
       }
 
-      if (Array.isArray(partnersRes) && partnersRes.length > 0) {
-        setPartners(deduplicatePartners(partnersRes));
-      } else {
-        const savedPartners = (await getItem<any[]>('grabit_partners')) || DEFAULT_PARTNERS;
-        setPartners(deduplicatePartners(savedPartners));
+      const [savedPartners, savedCustomers] = await Promise.all([
+        getItem<any[]>('grabit_partners').catch(() => null),
+        getItem<any[]>('grabit_registered_customers').catch(() => null),
+      ]);
+      const remotePartners = Array.isArray(partnersRes) ? partnersRes : [];
+      let cloudProfiles: any[] = [];
+      if (remotePartners.length === 0) {
+        cloudProfiles = (await fetchDirectFromSupabase<any[]>('admin/partners').catch(() => null)) || [];
       }
+      const combinedPartners = deduplicatePartners([
+        ...(Array.isArray(savedPartners) ? savedPartners : []),
+        ...(Array.isArray(savedCustomers) ? savedCustomers : []),
+        ...remotePartners,
+        ...cloudProfiles,
+        ...DEFAULT_PARTNERS,
+      ]);
+      setPartners(combinedPartners);
+      await setItem('grabit_partners', combinedPartners).catch(() => {});
 
       if (Array.isArray(productsRes) && productsRes.length > 0) {
         setProducts((prev) => {
@@ -477,7 +498,13 @@ export default function AdminPortalScreen({ initialTab }: { initialTab?: string 
   useEffect(() => {
     fetchAllAdminData();
     const interval = setInterval(fetchAllAdminData, 4000);
-    return () => clearInterval(interval);
+    const unsubPartners = onPartnersUpdate(() => {
+      fetchAllAdminData();
+    });
+    return () => {
+      clearInterval(interval);
+      unsubPartners();
+    };
   }, [fetchAllAdminData]);
 
   const fetchRiderDocs = useCallback(async (rid: string) => {
@@ -684,29 +711,39 @@ export default function AdminPortalScreen({ initialTab }: { initialTab?: string 
       return;
     }
     const fullPhone = '+91' + newPartnerPhone.replace(/\D/g, '').slice(-10);
+    const isRider = newPartnerRole === 'delivery_agent';
+    const genUuid = () => {
+      const hex = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
+      return `${hex()}${hex()}-${hex()}-4${hex().substring(1)}-8${hex().substring(1)}-${hex()}${hex()}${hex()}`;
+    };
     const payload = {
-      id: `partner-${Date.now()}`,
+      id: genUuid(),
       name: newPartnerName.trim(),
       full_name: newPartnerName.trim(),
       phone: fullPhone,
       email: newPartnerEmail.trim() || `${newPartnerRole}@grabit.local`,
       role: newPartnerRole,
       status: 'ACTIVE',
-      presence_status: 'ABSENT',
-      is_online: false,
+      presence_status: 'PRESENT',
+      agent_status: 'AVAILABLE',
+      is_online: true,
       verification_status: 'ADMIN_VERIFIED',
       partnerVerified: true,
+      vehicle_type: isRider ? (newPartnerVehicle.trim() || 'EV 2-Wheeler') : undefined,
+      plate_number: isRider ? (newPartnerPlate.trim() || 'KA 05 EX 4321') : undefined,
+      rating: 4.9,
+      distance: '0.4 km away',
     };
 
-    try {
-      await post('/users/', payload);
-    } catch { }
-    setPartners((prev) => deduplicatePartners([payload, ...prev]));
+    const saved = await savePartner(payload);
+    setPartners((prev) => deduplicatePartners([saved, ...prev]));
     setShowAddPartnerModal(false);
     setNewPartnerName('');
     setNewPartnerPhone('');
     setNewPartnerEmail('');
-    showToast(`Partner ${payload.name} added successfully!`, 'success');
+    setNewPartnerVehicle('EV 2-Wheeler');
+    setNewPartnerPlate('');
+    showToast(`Partner ${payload.name} added and synced across all portals!`, 'success');
   };
 
   const handleDeletePartner = async (partner: any) => {
@@ -1488,6 +1525,9 @@ export default function AdminPortalScreen({ initialTab }: { initialTab?: string 
           const ridersList = partners.filter(
             (p) => p && (p.role === 'delivery_agent' || p.role === 'rider' || p.role === 'delivery')
           );
+          const customersList = partners.filter(
+            (p) => p && (p.role === 'customer' || (!p.role && p.phone) || p.role === 'user')
+          );
 
           const renderDocMiniBadge = (label: string, status?: string) => {
             const st = String(status || 'VERIFIED').toUpperCase();
@@ -1520,6 +1560,17 @@ export default function AdminPortalScreen({ initialTab }: { initialTab?: string 
             return (
               (p.name || p.full_name || p.store_name || '').toLowerCase().includes(q) ||
               (p.phone || '').includes(q) ||
+              String(p.id || '').includes(q)
+            );
+          });
+
+          const filteredCustomers = customersList.filter((p) => {
+            if (!partnerSearchQuery) return true;
+            const q = partnerSearchQuery.toLowerCase();
+            return (
+              (p.name || p.full_name || '').toLowerCase().includes(q) ||
+              (p.phone || '').includes(q) ||
+              (p.email || '').toLowerCase().includes(q) ||
               String(p.id || '').includes(q)
             );
           });
@@ -1730,6 +1781,7 @@ export default function AdminPortalScreen({ initialTab }: { initialTab?: string 
                       { key: 'ALL', label: `All (${partners.length})` },
                       { key: 'SELLERS', label: `🏪 Sellers (${sellersList.length})` },
                       { key: 'RIDERS', label: `🛵 Riders (${ridersList.length})` },
+                      { key: 'CUSTOMERS', label: `👥 Customers (${customersList.length})` },
                     ].map((t) => (
                       <Pressable
                         key={t.key}
@@ -1989,6 +2041,64 @@ export default function AdminPortalScreen({ initialTab }: { initialTab?: string 
                           </Pressable>
                         );
                       })}
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* 👥 SECTION 3: REGISTERED CUSTOMERS */}
+              {(partnerFilter === 'ALL' || partnerFilter === 'CUSTOMERS') && (
+                <View style={styles.card}>
+                  <View style={styles.sectionHeaderRow}>
+                    <View style={styles.sectionHeaderLeft}>
+                      <Text style={{ fontSize: 18 }}>👥</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.sectionHeaderTitle} numberOfLines={1}>
+                          Registered Customers ({filteredCustomers.length})
+                        </Text>
+                        <Text style={styles.cardSubTitle} numberOfLines={1}>
+                          Live user accounts & verified shoppers
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.activeCountBadge}>
+                      <Text style={styles.activeCountBadgeText} numberOfLines={1}>
+                        {filteredCustomers.length} Customers
+                      </Text>
+                    </View>
+                  </View>
+
+                  {filteredCustomers.length === 0 ? (
+                    <View style={styles.emptyCard}>
+                      <Text style={styles.emptyText}>No registered customers match the filter</Text>
+                    </View>
+                  ) : (
+                    <View style={{ gap: 10, marginTop: 10 }}>
+                      {filteredCustomers.map((p, idx) => (
+                        <View key={p.id || p.phone || idx} style={styles.partnerCardContainer}>
+                          <View style={styles.partnerCardTopRow}>
+                            <View style={styles.partnerCardNameWrap}>
+                              <Text style={styles.partnerCardTitle} numberOfLines={1}>
+                                {p.full_name || p.name || 'Customer'}
+                              </Text>
+                              <View style={[styles.sellerRolePillBadge, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
+                                <Text style={[styles.sellerRolePillText, { color: '#1D4ED8' }]}>👤 CUSTOMER</Text>
+                              </View>
+                            </View>
+                            <View style={[styles.riderStatusPill, { backgroundColor: '#ECFDF5' }]}>
+                              <Text style={[styles.riderStatusText, { color: '#059669' }]}>● ACTIVE</Text>
+                            </View>
+                          </View>
+                          <Text style={styles.partnerPhoneLine}>
+                            📞 {p.phone || 'No phone'}
+                          </Text>
+                          {p.email ? (
+                            <Text style={[styles.cardSubTitle, { marginTop: 2, color: '#64748B', fontSize: 11 }]}>
+                              ✉️ {p.email}
+                            </Text>
+                          ) : null}
+                        </View>
+                      ))}
                     </View>
                   )}
                 </View>
@@ -2627,6 +2737,29 @@ export default function AdminPortalScreen({ initialTab }: { initialTab?: string 
                   </Pressable>
                 </View>
               </View>
+
+              {newPartnerRole === 'delivery_agent' && (
+                <>
+                  <View>
+                    <Text style={styles.hourInputLabel}>Vehicle Model / Type</Text>
+                    <TextInput
+                      style={styles.hourInput}
+                      placeholder="e.g. Ather 450X EV Scooter"
+                      value={newPartnerVehicle}
+                      onChangeText={setNewPartnerVehicle}
+                    />
+                  </View>
+                  <View>
+                    <Text style={styles.hourInputLabel}>Vehicle Number / Registration</Text>
+                    <TextInput
+                      style={styles.hourInput}
+                      placeholder="e.g. KA 05 EX 4321"
+                      value={newPartnerPlate}
+                      onChangeText={setNewPartnerPlate}
+                    />
+                  </View>
+                </>
+              )}
             </View>
 
             <Pressable style={styles.saveHoursBtn} onPress={handleAddPartner}>

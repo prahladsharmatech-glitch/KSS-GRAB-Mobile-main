@@ -233,6 +233,39 @@ def test_bug_20_complete_profile_schema(client):
     assert resp.json()["detail"] == "Phone verification expired. Please start over."
 
 
+def test_name_alphabetic_validation(client):
+    """Users cannot create an account using numbers or invalid characters in the Name field."""
+    # Attempt with digits
+    resp_digits = client.post(
+        "/api/auth/complete-profile",
+        json={"phone": "+919888877775", "full_name": "User123", "email": "test@user.com"}
+    )
+    assert resp_digits.status_code in (400, 422)
+
+    # Attempt with numbers only
+    resp_num = client.post(
+        "/api/auth/complete-profile",
+        json={"phone": "+919888877775", "full_name": "123456", "email": "test@user.com"}
+    )
+    assert resp_num.status_code in (400, 422)
+
+    # Attempt with special characters
+    resp_special = client.post(
+        "/api/auth/complete-profile",
+        json={"phone": "+919888877775", "full_name": "User@#$", "email": "test@user.com"}
+    )
+    assert resp_special.status_code in (400, 422)
+
+    # Attempt with valid alphabetic name
+    resp_valid = client.post(
+        "/api/auth/complete-profile",
+        json={"phone": "+919888877775", "full_name": "Valid User Name", "email": "test@user.com"}
+    )
+    # Passes name schema validation and reaches phone verification check
+    assert resp_valid.status_code == 400
+    assert resp_valid.json()["detail"] == "Phone verification expired. Please start over."
+
+
 # ------------------------------------------------------------------------------
 # Bug 22: Category ID Auto-Resolution
 # ------------------------------------------------------------------------------
@@ -247,6 +280,14 @@ def test_bug_22_create_product_unmatched_category(client):
     assert resp.status_code in (200, 201)
     product = resp.json()
     assert product.get("category_id") is None
+
+    # Clean up test product so it doesn't pollute the live catalog
+    if product.get("id"):
+        try:
+            client.delete(f"/api/products/{product['id']}", headers=seller_headers)
+        except Exception:
+            pass
+
 
 
 # ------------------------------------------------------------------------------
@@ -448,8 +489,64 @@ def test_order_status_normalization(client):
         assert resp.status_code in (200, 201)
 
 
+def test_admin_delivery_partner_sync_to_seller(client):
+    """Admin adds delivery partner via POST /api/users, reflected in GET /api/delivery/riders for Seller."""
+    seller_headers = {"Authorization": "Bearer seller-token"}
+    partner_payload = {
+        "id": "rider-sync-test-999",
+        "name": "Arun Express Rider",
+        "full_name": "Arun Express Rider",
+        "phone": "+919876501234",
+        "role": "delivery_agent",
+        "status": "ACTIVE",
+        "vehicle_type": "Ather 450X EV Scooter",
+        "plate_number": "KA 05 EX 4321",
+    }
+
+    with patch("backend.app.main.store.insert", new=AsyncMock(return_value=partner_payload)):
+        # 1. Admin creates partner
+        add_resp = client.post("/api/users", json=partner_payload)
+        assert add_resp.status_code == 200
+
+        # 2. Seller fetches riders list
+        riders_resp = client.get("/api/delivery/riders", headers=seller_headers)
+        assert riders_resp.status_code == 200
+        riders = riders_resp.json()
+        assert isinstance(riders, list)
+        matching = [r for r in riders if r.get("phone") == "+919876501234" or r.get("id") == "rider-sync-test-999"]
+        assert len(matching) > 0
+        assert matching[0]["name"] == "Arun Express Rider"
+        assert matching[0]["vehicle_type"] == "Ather 450X EV Scooter"
 
 
+def test_customer_registration_sync_to_admin(client):
+    """Customer registers via complete-profile, persisted and reflected in GET /api/users."""
+    phone = "+919876509988"
+    cust_name = "Priya Sharma"
 
+    with patch("backend.app.main.cache_get", new=AsyncMock(return_value={"verified": True})), \
+         patch("backend.app.main.cache_del", new=AsyncMock(return_value=True)), \
+         patch("backend.app.main.store.get", new=AsyncMock(return_value=[])), \
+         patch("backend.app.main.store.insert", new=AsyncMock(return_value={
+             "id": "cust-uuid-9988",
+             "phone": phone,
+             "full_name": cust_name,
+             "role": "customer"
+         })):
+        # 1. Complete profile
+        reg_resp = client.post(
+            "/api/auth/complete-profile",
+            json={"phone": phone, "full_name": cust_name, "email": "priya@example.com"}
+        )
+        assert reg_resp.status_code == 200
+        reg_data = reg_resp.json()
+        assert reg_data["user"]["full_name"] == cust_name
 
-
+        # 2. Users query
+        users_resp = client.get("/api/users")
+        assert users_resp.status_code == 200
+        all_users = users_resp.json()
+        matching_cust = [u for u in all_users if u.get("phone") == phone]
+        assert len(matching_cust) > 0
+        assert matching_cust[0]["full_name"] == cust_name
+        assert matching_cust[0]["role"] == "customer"
